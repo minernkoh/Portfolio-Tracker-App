@@ -1,0 +1,286 @@
+// this component shows detailed information about a specific asset
+// it displays the asset's current price, holdings, profit/loss, and transaction history
+
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { ArrowLeftIcon, PencilSimpleIcon, TrendUpIcon, TrendDownIcon } from '@phosphor-icons/react';
+import { formatCurrency, calculatePortfolioData } from '../services/utils';
+import { fetchTransactions, updateTransaction } from '../services/airtable';
+import { fetchStockPrices, fetchCryptoPrices } from '../services/api';
+import Layout from './Layout';
+import TransactionFormModal from './TransactionFormModal';
+import toast from 'react-hot-toast';
+
+export default function AssetDetails() {
+  // get the ticker from the url (e.g., /asset/AAPL)
+  const { ticker } = useParams();
+  
+  const [transactions, setTransactions] = useState([]);
+  const [prices, setPrices] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  
+  // calculate portfolio data using shared utility function
+  const portfolioData = useMemo(() => {
+    return calculatePortfolioData(transactions, prices);
+  }, [transactions, prices]);
+  
+  // load data - only fetch transactions for this specific ticker to speed up loading
+  useEffect(() => {
+    const initializeData = async () => {
+      try {
+        setLoading(true);
+        const hasAirtable = import.meta.env.VITE_AIRTABLE_API_KEY && import.meta.env.VITE_AIRTABLE_BASE_ID;
+        if (!hasAirtable) {
+          toast.error("Airtable configuration missing");
+          setLoading(false);
+          return;
+        }
+        
+        // fetch all transactions (we need all to calculate portfolio correctly)
+        const currentTransactions = await fetchTransactions();
+        setTransactions(currentTransactions);
+        
+        // only fetch price for this specific ticker to speed up loading
+        const tickerTransactions = currentTransactions.filter(tx => tx.ticker === ticker);
+        if (tickerTransactions.length > 0) {
+          // get asset type from first transaction (all transactions for same ticker should have same type)
+          // assetType is normalized to "Stock" or "Crypto" in airtable.js
+          const assetType = tickerTransactions[0].assetType || 'Stock';
+          const isCrypto = assetType === 'Crypto';
+          
+          // fetch price for just this asset
+          const priceMap = isCrypto 
+            ? await fetchCryptoPrices([ticker])
+            : await fetchStockPrices([ticker]);
+          setPrices(priceMap);
+        }
+      } catch (error) {
+        console.error("failed to initialize:", error);
+        toast.error("failed to load portfolio data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    initializeData();
+  }, [ticker]);
+  
+  // find the asset
+  const asset = portfolioData.find(a => a.ticker === ticker);
+  
+  const openEditModal = useCallback((tx) => {
+    setEditingTransaction(tx);
+    setIsFormOpen(true);
+  }, []);
+  
+  // if loading
+  if (loading) {
+    return (
+      <Layout>
+        <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-white/50">
+          Loading data...
+        </div>
+      </Layout>
+    );
+  }
+  
+  // if asset not found, show error message
+  if (!asset) {
+    return (
+      <Layout>
+        <div className="max-w-4xl mx-auto py-10">
+          <Link to="/" className="inline-flex items-center gap-2 text-[var(--text-secondary)] hover:text-white mb-6 transition-colors">
+            <ArrowLeftIcon size={20} /> Back to Dashboard
+          </Link>
+          <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-8 text-center">
+            <p className="text-[var(--text-secondary)]">Asset not found!</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // calculate profit/loss percentage
+  const isProfitable = asset.pnl >= 0;
+  const pnlPercent = asset.totalCost > 0 ? ((asset.pnl / asset.totalCost) * 100).toFixed(2) : '0.00';
+
+  return (
+    <Layout>
+      <div className="max-w-4xl mx-auto py-10 animate-fade-in">
+      {/* back button */}
+      <Link to="/" className="inline-flex items-center gap-2 text-[var(--text-secondary)] hover:text-white mb-6 transition-colors">
+        <ArrowLeftIcon size={20} /> Back to Dashboard
+      </Link>
+      
+      {/* asset header card */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 mb-6">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-4">
+            {/* asset logo */}
+            {asset.logo && (
+              <img 
+                src={asset.logo} 
+                alt={asset.name} 
+                className="w-16 h-16 rounded-full bg-transparent object-cover"
+                onError={(e) => {
+                  // if logo fails, show fallback
+                  e.target.onerror = null;
+                  e.target.src = `https://ui-avatars.com/api/?name=${asset.ticker}&background=random`;
+                }}
+              />
+            )}
+            <div>
+              <h1 className="text-2xl font-bold text-white">{asset.name}</h1>
+              <p className="text-[var(--text-secondary)]">{asset.ticker} • {asset.assetType}</p>
+            </div>
+          </div>
+          
+          {/* current price and 24h change */}
+          <div className="text-right">
+            <div className="text-3xl font-bold text-white">{formatCurrency(asset.currentPrice)}</div>
+            <div className={`flex items-center gap-1 justify-end mt-1 ${asset.priceChange24h >= 0 ? 'text-green' : 'text-red'}`}>
+              {asset.priceChange24h >= 0 ? <TrendUpIcon size={16} /> : <TrendDownIcon size={16} />}
+              <span className="text-sm font-bold">{Math.abs(asset.priceChange24h).toFixed(2)}%</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* stats grid showing key metrics */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-[var(--border-subtle)]">
+          {/* holdings (how many shares/coins you own) */}
+          <div>
+            <div className="text-xs text-[var(--text-secondary)] mb-1">Holdings</div>
+            <div className="text-lg font-bold text-white">{asset.quantity} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}</div>
+          </div>
+          
+          {/* market value (current worth) */}
+          <div>
+            <div className="text-xs text-[var(--text-secondary)] mb-1">Market value</div>
+            <div className="text-lg font-bold text-white">{formatCurrency(asset.totalValue)}</div>
+          </div>
+          
+          {/* average buy price */}
+          <div>
+            <div className="text-xs text-[var(--text-secondary)] mb-1">Avg price</div>
+            <div className="text-lg font-bold text-white">{formatCurrency(asset.avgPrice)}</div>
+          </div>
+          
+          {/* profit/loss */}
+          <div>
+            <div className="text-xs text-[var(--text-secondary)] mb-1">Profit/loss</div>
+            <div className={`text-lg font-bold ${isProfitable ? 'text-green' : 'text-red'}`}>
+              {isProfitable ? '+' : ''}{formatCurrency(asset.pnl)}
+              <span className="text-xs ml-1">({isProfitable ? '+' : ''}{pnlPercent}%)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* transaction history table */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl overflow-hidden">
+        <div className="p-6 border-b border-[var(--border-subtle)]">
+          <h2 className="text-lg font-bold text-white">Transaction history</h2>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">{asset.transactions?.length || 0} transactions</p>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-[var(--bg-app)]">
+              <tr>
+                <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)]">Date</th>
+                <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)]">Type</th>
+                <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Price</th>
+                <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Quantity</th>
+                <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Total</th>
+                <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border-subtle)]">
+              {/* show transactions or empty message */}
+              {asset.transactions && asset.transactions.length > 0 ? (
+                asset.transactions.map((tx) => (
+                  <tr key={tx.id} className="group hover:bg-[var(--bg-card-hover)] transition-colors">
+                    <td className="py-4 px-6 text-sm text-white/90">{tx.date}</td>
+                    {/* buy/sell badge */}
+                    <td className="py-4 px-6">
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${
+                        tx.type === 'Buy' 
+                        ? 'bg-green-500/10 text-green-500 border-green-500/20' 
+                        : 'bg-red-500/10 text-red-500 border-red-500/20'
+                      }`}>
+                        {tx.type}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-right text-sm font-medium">{formatCurrency(tx.price)}</td>
+                    <td className="py-4 px-6 text-right text-sm text-[var(--text-secondary)]">
+                      {tx.quantity} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
+                    </td>
+                    <td className="py-4 px-6 text-right text-sm font-medium">{formatCurrency(tx.quantity * tx.price)}</td>
+                    {/* edit button */}
+                    <td className="py-4 px-6 text-right">
+                      <button 
+                        onClick={() => openEditModal(tx)}
+                        className="p-1 text-[var(--text-secondary)] hover:text-white transition-colors"
+                        title="Edit transaction"
+                      >
+                        <PencilSimpleIcon size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="6" className="py-8 text-center text-[var(--text-secondary)]">
+                    No transactions recorded.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      {/* transaction form modal */}
+      {isFormOpen && (
+        <TransactionFormModal
+          isOpen={isFormOpen}
+          onClose={() => {
+            setIsFormOpen(false);
+            setEditingTransaction(null);
+          }}
+          onSubmit={async (updatedTx) => {
+            try {
+              await updateTransaction(updatedTx.id, updatedTx);
+              // reload data after update
+              const currentTransactions = await fetchTransactions();
+              setTransactions(currentTransactions);
+              
+              // only fetch price for this specific ticker
+              const tickerTransactions = currentTransactions.filter(tx => tx.ticker === ticker);
+              if (tickerTransactions.length > 0) {
+                // assetType is normalized to "Stock" or "Crypto" in airtable.js
+                const assetType = tickerTransactions[0].assetType || 'Stock';
+                const isCrypto = assetType === 'Crypto';
+                const priceMap = isCrypto 
+                  ? await fetchCryptoPrices([ticker])
+                  : await fetchStockPrices([ticker]);
+                setPrices(priceMap);
+              }
+              
+              setIsFormOpen(false);
+              setEditingTransaction(null);
+              toast.success("transaction updated successfully");
+            } catch (err) {
+              console.error("update transaction failed", err);
+              toast.error(`failed to update transaction: ${err.message || "unknown error"}`);
+            }
+          }}
+          initialData={editingTransaction}
+          isEditMode={!!editingTransaction && editingTransaction.id}
+        />
+      )}
+    </div>
+    </Layout>
+  );
+}
