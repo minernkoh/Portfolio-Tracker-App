@@ -3,13 +3,14 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeftIcon, PencilSimpleIcon, TrendUpIcon, TrendDownIcon } from '@phosphor-icons/react';
+import { ArrowLeftIcon, PencilSimpleIcon, TrendUpIcon, TrendDownIcon, PlusIcon } from '@phosphor-icons/react';
 import { formatCurrency, calculatePortfolioData, formatDateTime } from '../services/utils';
 import Layout from './Layout';
 import TransactionFormModal from './TransactionFormModal';
 import {
   useTransactions,
   usePrices,
+  useAddTransaction,
   useUpdateTransaction,
 } from '../hooks/usePortfolio';
 
@@ -20,6 +21,7 @@ export default function AssetDetails() {
   // TanStack Query hooks
   const { data: transactions = [], isLoading } = useTransactions();
   const { prices } = usePrices(transactions);
+  const addTransaction = useAddTransaction();
   const updateTransaction = useUpdateTransaction();
   
   // UI state
@@ -34,10 +36,39 @@ export default function AssetDetails() {
   // find the asset
   const asset = portfolioData.find(a => a.ticker === ticker);
   
+  // open the add transaction modal with ticker pre-filled
+  const openAddModal = useCallback(() => {
+    if (asset) {
+      setEditingTransaction({
+        ticker: asset.ticker,
+        name: asset.name,
+        assetType: asset.assetType,
+        logo: asset.logo,
+        isNew: true,
+      });
+    } else {
+      setEditingTransaction({
+        ticker: ticker,
+        isNew: true,
+      });
+    }
+    setIsFormOpen(true);
+  }, [asset, ticker]);
+  
   const openEditModal = useCallback((tx) => {
     setEditingTransaction(tx);
     setIsFormOpen(true);
   }, []);
+
+  // handler for adding a new transaction
+  const handleAddTransaction = useCallback(
+    async (newTx) => {
+      addTransaction.mutate(newTx);
+      setIsFormOpen(false);
+      setEditingTransaction(null);
+    },
+    [addTransaction]
+  );
 
   // handler for updating a transaction
   const handleUpdateTransaction = useCallback(
@@ -156,9 +187,19 @@ export default function AssetDetails() {
 
       {/* transaction history table */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl overflow-hidden">
-        <div className="p-6 border-b border-[var(--border-subtle)]">
-          <h2 className="text-lg font-bold text-white">Transaction history</h2>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">{asset.transactions?.length || 0} transactions</p>
+        <div className="p-6 border-b border-[var(--border-subtle)] flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-white">Transaction history</h2>
+            <p className="text-sm text-[var(--text-secondary)] mt-1">{asset.transactions?.length || 0} transactions</p>
+          </div>
+          <button
+            onClick={openAddModal}
+            disabled={addTransaction.isPending}
+            className="flex items-center gap-2 px-4 py-2 bg-[var(--text-primary)] text-[var(--bg-app)] font-bold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            <PlusIcon size={18} weight="bold" />
+            Add Transaction
+          </button>
         </div>
         
         <div className="overflow-x-auto">
@@ -227,9 +268,21 @@ export default function AssetDetails() {
             setIsFormOpen(false);
             setEditingTransaction(null);
           }}
-          onSubmit={handleUpdateTransaction}
+          onSubmit={
+            editingTransaction &&
+            editingTransaction.id &&
+            !editingTransaction.isNew
+              ? handleUpdateTransaction
+              : handleAddTransaction
+          }
           initialData={editingTransaction}
-          isEditMode={!!editingTransaction && editingTransaction.id}
+          isEditMode={
+            !!(
+              editingTransaction &&
+              editingTransaction.id &&
+              !editingTransaction.isNew
+            )
+          }
           portfolioData={portfolioData}
         />
       )}

@@ -337,13 +337,13 @@ export default function TransactionFormModal({
       }
     }
 
-    // price must be a positive number
+    // price must be a non-negative number (allows $0 for airdrops/gifts)
     const priceStr = String(formData.price || "").trim();
     const price = Number(formData.price);
     if (!priceStr || priceStr.length === 0) {
       newErrors.price = "Price is required";
-    } else if (isNaN(price) || price <= 0) {
-      newErrors.price = "Price must be a positive number";
+    } else if (isNaN(price) || price < 0) {
+      newErrors.price = "Price must be a non-negative number";
     }
 
     // date must be provided and not in the future
