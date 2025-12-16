@@ -2,53 +2,6 @@
 
 A modern, investment portfolio tracker built with React. Track your stocks and cryptocurrencies in one place with real-time price updates, visual analytics, and comprehensive transaction management. The app calculates your profit/loss using industry-standard FIFO (First In, First Out) cost basis methodology, giving you accurate insights into your investment performance.
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ and npm
-- Airtable account (free tier works)
-- TwelveData API key (free tier available)
-- CoinGecko API key (optional, free tier available)
-
-### Installation
-
-1. Clone the repository
-```bash
-git clone <repository-url>
-cd Portfolio-Tracker-App
-```
-
-2. Install dependencies
-```bash
-npm install
-```
-
-3. Set up environment variables (see below)
-
-4. Start the development server
-```bash
-npm run dev
-```
-
-5. Open [http://localhost:5173](http://localhost:5173) in your browser
-
-## Environment Variables
-
-Create a `.env` file in the root directory with the following variables:
-
-```env
-# Airtable Configuration
-VITE_AIRTABLE_API_KEY=your_airtable_api_key
-VITE_AIRTABLE_BASE_ID=your_airtable_base_id
-VITE_AIRTABLE_TABLE_ID=your_airtable_table_id  # Optional, defaults to existing table
-
-# TwelveData API (for stock prices)
-VITE_TWELVE_DATA_API_KEY=your_twelvedata_api_key
-
-# CoinGecko API (optional, works without key but with rate limits)
-VITE_COINGECKO_API_KEY=your_coingecko_api_key
-```
 
 ## Tech Stack
 
@@ -202,3 +155,51 @@ Contains pure utility functions for formatting and calculations. The `calculateP
    - Shared cache between Dashboard and AssetDetails components
    - Automatic garbage collection after 10 minutes of inactivity
    - Refetch on window focus for fresh data
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Airtable account (free tier works)
+- TwelveData API key (free tier available)
+- CoinGecko API key (optional, free tier available)
+
+### Installation
+
+1. Clone the repository
+```bash
+git clone <repository-url>
+cd Portfolio-Tracker-App
+```
+
+2. Install dependencies
+```bash
+npm install
+```
+
+3. Set up environment variables (see below)
+
+4. Start the development server
+```bash
+npm run dev
+```
+
+5. Open [http://localhost:5173](http://localhost:5173) in your browser
+
+## Environment Variables
+
+Create a `.env` file in the root directory with the following variables:
+
+```env
+# Airtable Configuration
+VITE_AIRTABLE_API_KEY=your_airtable_api_key
+VITE_AIRTABLE_BASE_ID=your_airtable_base_id
+VITE_AIRTABLE_TABLE_ID=your_airtable_table_id  # Optional, defaults to existing table
+
+# TwelveData API (for stock prices)
+VITE_TWELVE_DATA_API_KEY=your_twelvedata_api_key
+
+# CoinGecko API (optional, works without key but with rate limits)
+VITE_COINGECKO_API_KEY=your_coingecko_api_key
+```
