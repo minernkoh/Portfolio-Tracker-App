@@ -29,6 +29,27 @@ export const formatPercentage = (value) => {
   return value > 0 ? `+${formatted}` : formatted;
 };
 
+// format a date string to show date and time nicely (removes T and Z)
+// example: formatDateTime("2024-01-15T14:30:00Z") returns "2024-01-15 14:30"
+export const formatDateTime = (dateString) => {
+  if (!dateString) return "";
+  
+  try {
+    const date = new Date(dateString);
+    // format as YYYY-MM-DD HH:MM
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+  } catch (error) {
+    // if parsing fails, try to clean up the string by removing T and Z
+    return dateString.replace("T", " ").replace(/Z$/, "").substring(0, 16);
+  }
+};
+
 // calculate the total value of an asset
 export const calculateValue = (quantity, price) => {
   return quantity * price;

@@ -231,7 +231,7 @@ const fetchStockPrice = async (symbol, useCache = true) => {
   }
 };
 
-const getStockLogo = (ticker) => {
+export const getStockLogo = (ticker) => {
   // generate a simple avatar with the ticker letters
   return `https://ui-avatars.com/api/?name=${ticker}&background=4f46e5&color=fff&bold=true`;
 };

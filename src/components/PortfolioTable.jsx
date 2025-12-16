@@ -56,9 +56,12 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
       // sort numeric values (prices, values, percentages)
       const numericKeys = ['currentPrice', 'priceChange24h', 'totalValue', 'pnl', 'avgPrice'];
       if(numericKeys.includes(sortConfig.key)) {
+          // handle null/undefined values for 7d and 30d changes (stocks don't have these)
+          const valA = a[sortConfig.key] ?? -Infinity;
+          const valB = b[sortConfig.key] ?? -Infinity;
           return sortConfig.direction === 'asc' 
-             ? a[sortConfig.key] - b[sortConfig.key]
-             : b[sortConfig.key] - a[sortConfig.key];
+             ? valA - valB
+             : valB - valA;
       }
       // sort string values (ticker/name alphabetically)
       if(sortConfig.key === 'ticker') {
@@ -90,11 +93,11 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
               <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right hover:text-white transition-colors" onClick={() => handleSort('totalValue')}>
                   <div className="flex items-center justify-end gap-1">Market Value {renderSortArrow('totalValue')}</div>
               </th>
-              <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right hover:text-white transition-colors" onClick={() => handleSort('pnl')}>
-                  <div className="flex items-center justify-end gap-1">Profit/loss {renderSortArrow('pnl')}</div>
-              </th>
               <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right hover:text-white transition-colors" onClick={() => handleSort('avgPrice')}>
-                  <div className="flex items-center justify-end gap-1">Avg.price {renderSortArrow('avgPrice')}</div>
+                  <div className="flex items-center justify-end gap-1">Avg. Price {renderSortArrow('avgPrice')}</div>
+              </th>
+              <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right hover:text-white transition-colors" onClick={() => handleSort('pnl')}>
+                  <div className="flex items-center justify-end gap-1">Profit/Loss {renderSortArrow('pnl')}</div>
               </th>
               <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Actions</th>
             </tr>
@@ -160,6 +163,11 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                   </div>
                 </td>
 
+                {/* average buy price */}
+                <td className="py-4 px-6 text-right text-sm font-medium text-[var(--text-primary)]">
+                   {formatCurrency(asset.avgPrice, hideValues)}
+                </td>
+
                 {/* profit/loss */}
                 <td className="py-4 px-6 text-right">
                    <div className={`text-sm font-bold ${asset.pnl >= 0 ? 'text-green' : 'text-red'}`}>
@@ -168,11 +176,6 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                    <div className={`text-xs ${asset.pnl >= 0 ? 'text-green' : 'text-red'}`}>
                      {asset.pnl >= 0 ? '▲' : '▼'} {asset.totalValue > asset.pnl ? ((asset.pnl / (asset.totalValue - asset.pnl)) * 100).toFixed(2) : 0}%
                    </div>
-                </td>
-
-                {/* average buy price */}
-                <td className="py-4 px-6 text-right text-sm font-medium text-[var(--text-primary)]">
-                   {formatCurrency(asset.avgPrice, hideValues)}
                 </td>
                 
                 {/* action buttons */}

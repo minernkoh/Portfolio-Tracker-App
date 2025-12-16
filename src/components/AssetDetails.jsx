@@ -1,23 +1,28 @@
 // this component shows detailed information about a specific asset
 // it displays the asset's current price, holdings, profit/loss, and transaction history
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeftIcon, PencilSimpleIcon, TrendUpIcon, TrendDownIcon } from '@phosphor-icons/react';
-import { formatCurrency, calculatePortfolioData } from '../services/utils';
-import { fetchTransactions, updateTransaction } from '../services/airtable';
-import { fetchStockPrices, fetchCryptoPrices } from '../services/api';
+import { formatCurrency, calculatePortfolioData, formatDateTime } from '../services/utils';
 import Layout from './Layout';
 import TransactionFormModal from './TransactionFormModal';
-import toast from 'react-hot-toast';
+import {
+  useTransactions,
+  usePrices,
+  useUpdateTransaction,
+} from '../hooks/usePortfolio';
 
 export default function AssetDetails() {
   // get the ticker from the url (e.g., /asset/AAPL)
   const { ticker } = useParams();
   
-  const [transactions, setTransactions] = useState([]);
-  const [prices, setPrices] = useState({});
-  const [loading, setLoading] = useState(true);
+  // TanStack Query hooks
+  const { data: transactions = [], isLoading } = useTransactions();
+  const { prices } = usePrices(transactions);
+  const updateTransaction = useUpdateTransaction();
+  
+  // UI state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   
@@ -26,46 +31,6 @@ export default function AssetDetails() {
     return calculatePortfolioData(transactions, prices);
   }, [transactions, prices]);
   
-  // load data - only fetch transactions for this specific ticker to speed up loading
-  useEffect(() => {
-    const initializeData = async () => {
-      try {
-        setLoading(true);
-        const hasAirtable = import.meta.env.VITE_AIRTABLE_API_KEY && import.meta.env.VITE_AIRTABLE_BASE_ID;
-        if (!hasAirtable) {
-          toast.error("Airtable configuration missing");
-          setLoading(false);
-          return;
-        }
-        
-        // fetch all transactions (we need all to calculate portfolio correctly)
-        const currentTransactions = await fetchTransactions();
-        setTransactions(currentTransactions);
-        
-        // only fetch price for this specific ticker to speed up loading
-        const tickerTransactions = currentTransactions.filter(tx => tx.ticker === ticker);
-        if (tickerTransactions.length > 0) {
-          // get asset type from first transaction (all transactions for same ticker should have same type)
-          // assetType is normalized to "Stock" or "Crypto" in airtable.js
-          const assetType = tickerTransactions[0].assetType || 'Stock';
-          const isCrypto = assetType === 'Crypto';
-          
-          // fetch price for just this asset
-          const priceMap = isCrypto 
-            ? await fetchCryptoPrices([ticker])
-            : await fetchStockPrices([ticker]);
-          setPrices(priceMap);
-        }
-      } catch (error) {
-        console.error("failed to initialize:", error);
-        toast.error("failed to load portfolio data");
-      } finally {
-        setLoading(false);
-      }
-    };
-    initializeData();
-  }, [ticker]);
-  
   // find the asset
   const asset = portfolioData.find(a => a.ticker === ticker);
   
@@ -73,9 +38,21 @@ export default function AssetDetails() {
     setEditingTransaction(tx);
     setIsFormOpen(true);
   }, []);
+
+  // handler for updating a transaction
+  const handleUpdateTransaction = useCallback(
+    async (updatedTx) => {
+      // use mutateAsync to properly await the mutation and propagate errors
+      await updateTransaction.mutateAsync({ id: updatedTx.id, data: updatedTx });
+      // only close modal after successful update
+      setIsFormOpen(false);
+      setEditingTransaction(null);
+    },
+    [updateTransaction]
+  );
   
   // if loading
-  if (loading) {
+  if (isLoading) {
     return (
       <Layout>
         <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-white/50">
@@ -201,7 +178,7 @@ export default function AssetDetails() {
               {asset.transactions && asset.transactions.length > 0 ? (
                 asset.transactions.map((tx) => (
                   <tr key={tx.id} className="group hover:bg-[var(--bg-card-hover)] transition-colors">
-                    <td className="py-4 px-6 text-sm text-white/90">{tx.date}</td>
+                    <td className="py-4 px-6 text-sm text-white/90">{formatDateTime(tx.date)}</td>
                     {/* buy/sell badge */}
                     <td className="py-4 px-6">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${
@@ -221,7 +198,8 @@ export default function AssetDetails() {
                     <td className="py-4 px-6 text-right">
                       <button 
                         onClick={() => openEditModal(tx)}
-                        className="p-1 text-[var(--text-secondary)] hover:text-white transition-colors"
+                        disabled={updateTransaction.isPending}
+                        className="p-1 text-[var(--text-secondary)] hover:text-white transition-colors disabled:opacity-50"
                         title="Edit transaction"
                       >
                         <PencilSimpleIcon size={18} />
@@ -249,35 +227,10 @@ export default function AssetDetails() {
             setIsFormOpen(false);
             setEditingTransaction(null);
           }}
-          onSubmit={async (updatedTx) => {
-            try {
-              await updateTransaction(updatedTx.id, updatedTx);
-              // reload data after update
-              const currentTransactions = await fetchTransactions();
-              setTransactions(currentTransactions);
-              
-              // only fetch price for this specific ticker
-              const tickerTransactions = currentTransactions.filter(tx => tx.ticker === ticker);
-              if (tickerTransactions.length > 0) {
-                // assetType is normalized to "Stock" or "Crypto" in airtable.js
-                const assetType = tickerTransactions[0].assetType || 'Stock';
-                const isCrypto = assetType === 'Crypto';
-                const priceMap = isCrypto 
-                  ? await fetchCryptoPrices([ticker])
-                  : await fetchStockPrices([ticker]);
-                setPrices(priceMap);
-              }
-              
-              setIsFormOpen(false);
-              setEditingTransaction(null);
-              toast.success("transaction updated successfully");
-            } catch (err) {
-              console.error("update transaction failed", err);
-              toast.error(`failed to update transaction: ${err.message || "unknown error"}`);
-            }
-          }}
+          onSubmit={handleUpdateTransaction}
           initialData={editingTransaction}
           isEditMode={!!editingTransaction && editingTransaction.id}
+          portfolioData={portfolioData}
         />
       )}
     </div>

@@ -1,102 +1,60 @@
-// this is the main dashboard component - it's the heart of the app
-// it displays your portfolio, handles adding/editing transactions, and calculates all the numbers
+// this is the main dashboard component
+// it displays portfolio, handles adding/editing transactions, and calculates all the numbers
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
-import toast from "react-hot-toast";
+import React, { useState, useCallback, useMemo } from "react";
 import Layout from "./Layout";
 import PortfolioCharts from "./PortfolioCharts";
 import PortfolioTable from "./PortfolioTable";
 import TransactionFormModal from "./TransactionFormModal";
-import { fetchStockPrices, fetchCryptoPrices } from "../services/api";
 import {
-  calculateValue,
-  calculateUnrealizedPnL,
   formatCurrency,
   calculatePortfolioData,
+  formatDateTime,
 } from "../services/utils";
 import {
-  fetchTransactions,
-  createTransaction,
-  updateTransaction,
-  deleteTransaction,
-} from "../services/airtable";
+  useTransactions,
+  usePrices,
+  useAddTransaction,
+  useUpdateTransaction,
+  useDeleteAsset,
+  useAirtableStatus,
+} from "../hooks/usePortfolio";
 import {
   EyeIcon,
   EyeSlashIcon,
   PlusIcon,
   PencilSimpleIcon,
+  ArrowClockwiseIcon,
 } from "@phosphor-icons/react";
 
 export default function Dashboard() {
-  const [transactions, setTransactions] = useState([]);
-  const [prices, setPrices] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [isAirtableEnabled, setIsAirtableEnabled] = useState(false);
-  const [operationLoading, setOperationLoading] = useState(false);
+  // TanStack Query hooks for data fetching
+  const { isEnabled: isAirtableEnabled } = useAirtableStatus();
+  const {
+    data: transactions = [],
+    isLoading,
+    error: loadError,
+    refetch,
+  } = useTransactions();
+  const { prices, isFetching: pricesFetching } = usePrices(transactions);
+
+  // mutation hooks for CRUD operations
+  const addTransaction = useAddTransaction();
+  const updateTransaction = useUpdateTransaction();
+  const deleteAsset = useDeleteAsset();
+
+  // UI state (not data-related)
   const [hideValues, setHideValues] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [txSortConfig, setTxSortConfig] = useState({
-    // sort transactions table
     key: "date",
     direction: "desc",
   });
   const [filterType, setFilterType] = useState("All");
-
-  // is the transaction form modal open?
   const [isFormOpen, setIsFormOpen] = useState(false);
-
-  // which transaction we're editing (null if adding new)
   const [editingTransaction, setEditingTransaction] = useState(null);
 
-  // function to fetch prices for all assets in transactions
-  // this separates stocks from crypto and fetches prices from the right api
-  const fetchAllPrices = useCallback(async (txs) => {
-    try {
-      // separate stock tickers from crypto tickers
-      const stockTickers = [];
-      const cryptoTickers = [];
-
-      txs.forEach((tx) => {
-        const ticker = tx.ticker;
-        const assetType = (tx.assetType || "").toLowerCase();
-
-        // if it's crypto, add to crypto list
-        if (assetType === "crypto") {
-          if (!cryptoTickers.includes(ticker)) {
-            cryptoTickers.push(ticker);
-          }
-        } else {
-          // otherwise it's a stock
-          if (!stockTickers.includes(ticker)) {
-            stockTickers.push(ticker);
-          }
-        }
-      });
-
-      const priceMap = {};
-
-      // fetch stock prices from twelvedata api
-      if (stockTickers.length > 0) {
-        const stockPrices = await fetchStockPrices(stockTickers);
-        Object.assign(priceMap, stockPrices);
-      }
-
-      // fetch crypto prices from coingecko api
-      if (cryptoTickers.length > 0) {
-        const cryptoPrices = await fetchCryptoPrices(cryptoTickers);
-        Object.assign(priceMap, cryptoPrices);
-      }
-
-      return priceMap;
-    } catch (error) {
-      console.error("error fetching prices:", error);
-      toast.error("failed to fetch some prices. using cached data.");
-      return {};
-    }
-  }, []);
-
   // calculate portfolio data from transactions and prices
-  // uses shared utility function to avoid code duplication
   const portfolioData = useMemo(() => {
     return calculatePortfolioData(transactions, prices);
   }, [transactions, prices]);
@@ -110,173 +68,60 @@ export default function Dashboard() {
     return portfolioData.reduce((sum, asset) => sum + asset.pnl, 0);
   }, [portfolioData]);
 
+  // calculate 24h change for entire portfolio
+  const total24hChange = useMemo(() => {
+    return portfolioData.reduce((sum, asset) => {
+      // 24h change = (priceChange24h% / 100) * currentPrice * quantity
+      const change24h =
+        (asset.priceChange24h / 100) * asset.currentPrice * asset.quantity;
+      return sum + change24h;
+    }, 0);
+  }, [portfolioData]);
+
+  const is24hPositive = total24hChange >= 0;
   const isPositive = totalPnL >= 0;
-
-  // load data when component first mounts (when page loads)
-  useEffect(() => {
-    const initializeData = async () => {
-      try {
-        setLoading(true);
-
-        // check if airtable api keys are configured
-        const hasAirtable =
-          import.meta.env.VITE_AIRTABLE_API_KEY &&
-          import.meta.env.VITE_AIRTABLE_BASE_ID;
-        setIsAirtableEnabled(!!hasAirtable);
-
-        let currentTransactions = [];
-
-        if (hasAirtable) {
-          try {
-            // fetch all transactions from airtable database
-            const remoteData = await fetchTransactions();
-            currentTransactions = remoteData;
-            toast.success("data loaded");
-          } catch (error) {
-            console.error("airtable fetch failed:", error);
-            toast.error("failed to load from airtable. check your api keys.");
-          }
-        } else {
-          toast.error(
-            "airtable configuration missing. please add your api keys."
-          );
-        }
-
-        setTransactions(currentTransactions);
-
-        // fetch real-time prices for all assets
-        const priceMap = await fetchAllPrices(currentTransactions);
-        setPrices(priceMap);
-      } catch (error) {
-        console.error("failed to initialize dashboard:", error);
-        toast.error("failed to load portfolio data. please refresh the page.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initializeData();
-  }, [fetchAllPrices]);
-
-  // refresh prices when transactions change
-  useEffect(() => {
-    if (transactions.length > 0) {
-      fetchAllPrices(transactions).then((priceMap) => {
-        setPrices((prev) => ({ ...prev, ...priceMap }));
-      });
-    }
-  }, [transactions, fetchAllPrices]);
 
   // handler function: add a new transaction
   const handleAddTransaction = useCallback(
     async (newTx) => {
-      if (!isAirtableEnabled) {
-        toast.error("airtable not connected. cannot add transaction.");
-        return;
-      }
-
-      setOperationLoading(true);
-      try {
-        // save transaction to airtable database
-        const addedTx = await createTransaction(newTx);
-        if (addedTx) {
-          // add to local state so ui updates immediately
-          setTransactions((prev) => [...prev, addedTx]);
-          toast.success("transaction added successfully");
-
-          // fetch price for new asset if we don't have it yet
-          if (!prices[newTx.ticker]) {
-            const newPriceMap = await fetchAllPrices([
-              ...transactions,
-              addedTx,
-            ]);
-            setPrices((prev) => ({ ...prev, ...newPriceMap }));
-          }
-        }
-      } catch (err) {
-        console.error("add transaction failed", err);
-        toast.error(
-          `failed to add transaction: ${err.message || "unknown error"}`
-        );
-      } finally {
-        setOperationLoading(false);
-      }
+      addTransaction.mutate(newTx);
     },
-    [isAirtableEnabled, prices, transactions, fetchAllPrices]
+    [addTransaction]
   );
 
   // handler function: edit an existing transaction
   const handleEditTransaction = useCallback(
     async (updatedTx) => {
-      if (!isAirtableEnabled) return;
-
-      setOperationLoading(true);
-      try {
-        // update transaction in airtable database
-        const result = await updateTransaction(updatedTx.id, updatedTx);
-        if (result) {
-          // update local state
-          setTransactions((prev) =>
-            prev.map((tx) => (tx.id === updatedTx.id ? updatedTx : tx))
-          );
-          toast.success("transaction updated successfully");
-        }
-      } catch (err) {
-        console.error("update transaction failed", err);
-        toast.error(
-          `failed to update transaction: ${err.message || "unknown error"}`
-        );
-      } finally {
-        setOperationLoading(false);
-      }
+      // use mutateAsync to properly await the mutation and propagate errors
+      await updateTransaction.mutateAsync({
+        id: updatedTx.id,
+        data: updatedTx,
+      });
     },
-    [isAirtableEnabled]
+    [updateTransaction]
   );
 
   // handler function: delete all transactions for an asset
   const handleDeleteAsset = useCallback(
     async (ticker) => {
-      if (!isAirtableEnabled) return;
-
-      // ask user to confirm before deleting
       if (
         !window.confirm(
-          `are you sure you want to remove ${ticker}? this will delete all transactions associated with it.`
+          `Are you sure you want to remove ${ticker}? This will delete all transactions associated with it.`
         )
       )
         return;
 
-      setOperationLoading(true);
-      try {
-        // find all transactions for this ticker
-        const txsToDelete = transactions.filter((tx) => tx.ticker === ticker);
-
-        // delete each transaction from airtable
-        // we do this one by one to avoid hitting rate limits
-        for (const tx of txsToDelete) {
-          await deleteTransaction(tx.id);
-        }
-
-        // remove from local state
-        setTransactions((prev) => prev.filter((tx) => tx.ticker !== ticker));
-        toast.success(
-          `removed ${ticker} and ${txsToDelete.length} transaction(s)`
-        );
-      } catch (err) {
-        console.error("delete asset failed", err);
-        toast.error(
-          `failed to delete asset: ${err.message || "unknown error"}`
-        );
-      } finally {
-        setOperationLoading(false);
-      }
+      const txsToDelete = transactions.filter((tx) => tx.ticker === ticker);
+      deleteAsset.mutate({
+        ticker,
+        transactionIds: txsToDelete.map((tx) => tx.id),
+      });
     },
-    [transactions, isAirtableEnabled]
+    [transactions, deleteAsset]
   );
 
   // open the add transaction modal
   const openAddModal = useCallback((ticker = null) => {
-    // if ticker is provided, pre-fill it in the form
     if (ticker) {
       setEditingTransaction({ ticker, isNew: true });
     } else {
@@ -294,7 +139,6 @@ export default function Dashboard() {
   // handler for sorting transactions table
   const handleTxSort = useCallback((key) => {
     setTxSortConfig((current) => {
-      // if clicking same column, toggle direction; otherwise set to ascending
       let direction = "asc";
       if (current.key === key && current.direction === "asc") {
         direction = "desc";
@@ -310,7 +154,6 @@ export default function Dashboard() {
         filterType === "All" ? true : tx.assetType === filterType
       )
       .sort((a, b) => {
-        // sort by date
         if (txSortConfig.key === "date") {
           const dateA = new Date(a.date);
           const dateB = new Date(b.date);
@@ -319,7 +162,6 @@ export default function Dashboard() {
             : dateB - dateA;
         }
 
-        // sort by numeric values (quantity, price, total)
         const numericKeys = ["quantity", "price"];
         if (
           numericKeys.includes(txSortConfig.key) ||
@@ -336,7 +178,6 @@ export default function Dashboard() {
           return txSortConfig.direction === "asc" ? valA - valB : valB - valA;
         }
 
-        // sort by string values (ticker, type)
         const strA = String(a[txSortConfig.key]).toLowerCase();
         const strB = String(b[txSortConfig.key]).toLowerCase();
         if (strA < strB) return txSortConfig.direction === "asc" ? -1 : 1;
@@ -359,19 +200,46 @@ export default function Dashboard() {
   );
 
   // filter portfolio data by asset type
-  // this hook must be called before any conditional returns (rules of hooks)
   const filteredPortfolioData = useMemo(() => {
     if (filterType === "All") return portfolioData;
     return portfolioData.filter((asset) => asset.assetType === filterType);
   }, [portfolioData, filterType]);
 
   // show loading screen while data is being fetched
-  // this conditional return must come AFTER all hooks
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-white/50">
         Loading data...
       </div>
+    );
+  }
+
+  // show error screen with retry button if loading failed
+  if (loadError || (!isAirtableEnabled && transactions.length === 0)) {
+    const errorMessage = !isAirtableEnabled
+      ? "Airtable configuration missing. Please add your API keys to .env file."
+      : loadError?.message ||
+        "Failed to load portfolio data. Please try again.";
+
+    return (
+      <Layout>
+        <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-8 max-w-md w-full">
+            <div className="text-red-500 text-4xl mb-4">⚠️</div>
+            <h2 className="text-xl font-bold text-white mb-2">
+              Failed to Load Data
+            </h2>
+            <p className="text-[var(--text-secondary)] mb-6">{errorMessage}</p>
+            <button
+              onClick={() => refetch()}
+              className="flex items-center justify-center gap-2 bg-[var(--accent-blue)] text-white px-6 py-3 rounded-lg font-bold text-sm hover:bg-blue-600 transition-colors w-full"
+            >
+              <ArrowClockwiseIcon size={18} weight="bold" />
+              Try Again
+            </button>
+          </div>
+        </div>
+      </Layout>
     );
   }
 
@@ -412,6 +280,12 @@ export default function Dashboard() {
                     <EyeIcon size={18} />
                   )}
                 </button>
+                {/* show indicator when prices are refreshing */}
+                {pricesFetching && (
+                  <span className="text-xs text-[var(--text-secondary)] animate-pulse">
+                    Updating prices...
+                  </span>
+                )}
               </div>
               <div className="flex flex-col">
                 {/* total portfolio value */}
@@ -420,33 +294,33 @@ export default function Dashboard() {
                     {formatCurrency(totalValue, hideValues)}
                   </span>
                 </div>
-                {/* total profit/loss */}
+                {/* 24h change */}
                 <div className="flex items-center gap-3 mt-1">
                   <span
                     className={`text-sm font-bold ${
-                      isPositive ? "text-green" : "text-red"
+                      is24hPositive ? "text-green" : "text-red"
                     }`}
                   >
-                    {isPositive ? "+" : ""}
-                    {formatCurrency(totalPnL, hideValues)}
+                    {is24hPositive ? "+" : ""}
+                    {formatCurrency(total24hChange, hideValues)}
                   </span>
-                  {/* profit/loss percentage */}
+                  {/* 24h percentage */}
                   <span
                     className={`text-sm font-bold ${
-                      isPositive ? "text-green" : "text-red"
+                      is24hPositive ? "text-green" : "text-red"
                     }`}
                   >
-                    {isPositive ? "▲" : "▼"}
+                    {is24hPositive ? "▲" : "▼"}
                     {!hideValues
                       ? totalValue > 0
                         ? (
-                            (Math.abs(totalPnL) /
-                              (totalValue - Math.abs(totalPnL))) *
+                            (Math.abs(total24hChange) /
+                              (totalValue - total24hChange)) *
                             100
                           ).toFixed(2)
                         : "0.00"
                       : "***"}
-                    % (all-time)
+                    % (24h)
                   </span>
                 </div>
               </div>
@@ -481,8 +355,9 @@ export default function Dashboard() {
           <div className="flex flex-col items-end gap-4">
             <div className="flex items-center gap-2">
               <button
-                onClick={openAddModal}
-                className="flex items-center gap-2 bg-[var(--accent-blue)] text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-600 transition-colors"
+                onClick={() => openAddModal()}
+                disabled={addTransaction.isPending}
+                className="flex items-center gap-2 bg-[var(--accent-blue)] text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-600 transition-colors disabled:opacity-50"
               >
                 <PlusIcon size={16} /> Add Transaction
               </button>
@@ -700,7 +575,7 @@ export default function Dashboard() {
                         className="hover:bg-[var(--bg-card-hover)] transition-colors"
                       >
                         <td className="py-4 px-6 text-sm text-[var(--text-secondary)]">
-                          {tx.date}
+                          {formatDateTime(tx.date)}
                         </td>
                         <td className="py-4 px-6">
                           <span
@@ -748,7 +623,7 @@ export default function Dashboard() {
             isOpen={isFormOpen}
             onClose={() => {
               setIsFormOpen(false);
-              setEditingTransaction(null); // reset editing state when closing
+              setEditingTransaction(null);
             }}
             onSubmit={
               editingTransaction &&
@@ -765,6 +640,7 @@ export default function Dashboard() {
                 !editingTransaction.isNew
               )
             }
+            portfolioData={portfolioData}
           />
         )}
       </div>

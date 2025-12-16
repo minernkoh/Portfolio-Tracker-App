@@ -2,8 +2,8 @@
 // it's a modal (popup window) that appears when you click "add transaction"
 
 import React, { useState, useEffect } from "react";
-import { XIcon, CheckIcon } from "@phosphor-icons/react";
-import { getStockLogo } from "../services/api";
+import { XIcon, CheckIcon, SpinnerGap } from "@phosphor-icons/react";
+import { getStockLogo, fetchStockPrices, fetchCryptoPrices } from "../services/api";
 
 // list of popular assets for autocomplete (search suggestions)
 // when you type a ticker, it shows matching assets from this list
@@ -121,6 +121,7 @@ export default function TransactionFormModal({
   onSubmit,
   initialData = null,
   isEditMode = false,
+  portfolioData = [],
 }) {
   // form data state - stores what the user types in the form
   const [formData, setFormData] = useState({
@@ -136,6 +137,7 @@ export default function TransactionFormModal({
   // autocomplete state
   const [searchResults, setSearchResults] = useState([]); // matching assets when typing
   const [showDropdown, setShowDropdown] = useState(false); // show/hide autocomplete dropdown
+  const [isFetchingPrice, setIsFetchingPrice] = useState(false); // loading state for price autofill
 
   // when modal opens, pre-fill form if editing
   useEffect(() => {
@@ -161,8 +163,9 @@ export default function TransactionFormModal({
           name: initialData.name || (match ? match.name : ""),
           assetType: assetTypeValue,
           logo: initialData.logo || (match ? match.logo : undefined),
-          quantity: initialData.quantity || "",
-          price: initialData.price || "",
+          // ensure quantity and price are strings for form input handling
+          quantity: initialData.quantity != null ? String(initialData.quantity) : "",
+          price: initialData.price != null ? String(initialData.price) : "",
           date: initialData.date
             ? new Date(initialData.date).toISOString().split("T")[0]
             : new Date().toISOString().split("T")[0],
@@ -185,6 +188,32 @@ export default function TransactionFormModal({
     }
   }, [isOpen, initialData]);
 
+  // fetch current market price for a given ticker and asset type
+  const fetchCurrentPrice = async (ticker, assetType) => {
+    setIsFetchingPrice(true);
+    try {
+      let priceData = null;
+      if (assetType.toLowerCase() === "crypto") {
+        const prices = await fetchCryptoPrices([ticker]);
+        priceData = prices[ticker];
+      } else {
+        const prices = await fetchStockPrices([ticker]);
+        priceData = prices[ticker];
+      }
+      
+      if (priceData && priceData.currentPrice > 0) {
+        setFormData((prev) => ({
+          ...prev,
+          price: priceData.currentPrice.toString(),
+        }));
+      }
+    } catch (error) {
+      console.warn("failed to fetch current price:", error);
+    } finally {
+      setIsFetchingPrice(false);
+    }
+  };
+
   // when user selects an asset from autocomplete dropdown
   const selectAsset = (asset) => {
     setFormData((prev) => ({
@@ -196,6 +225,9 @@ export default function TransactionFormModal({
     }));
     setShowDropdown(false);
     setSearchResults([]);
+    
+    // autofill price with current market price
+    fetchCurrentPrice(asset.ticker, asset.type);
   };
 
   // clear selected asset to allow searching again
@@ -242,6 +274,18 @@ export default function TransactionFormModal({
           : undefined,
       }));
 
+      // if exact match found, fetch current market price
+      if (match && !isEditMode) {
+        fetchCurrentPrice(match.ticker, match.type);
+      } else if (!match && upperValue.length > 0 && !isEditMode) {
+        // if no match but ticker is entered, try to fetch price based on current assetType
+        // this helps when user manually types a ticker and selects asset type
+        const currentAssetType = formData.assetType || "stock";
+        if (currentAssetType === "crypto" || currentAssetType === "Crypto") {
+          fetchCurrentPrice(upperValue, "Crypto");
+        }
+      }
+
       // show autocomplete dropdown if typing and not in edit mode
       if (upperValue.length > 0 && !isEditMode) {
         const matches = SEARCH_ASSETS.filter(
@@ -276,16 +320,27 @@ export default function TransactionFormModal({
     }
 
     // quantity must be a positive number
+    const quantityStr = String(formData.quantity || "").trim();
     const quantity = Number(formData.quantity);
-    if (!formData.quantity || formData.quantity.trim().length === 0) {
+    if (!quantityStr || quantityStr.length === 0) {
       newErrors.quantity = "Quantity is required";
     } else if (isNaN(quantity) || quantity <= 0) {
       newErrors.quantity = "Quantity must be a positive number";
     }
 
+    // validate sell transactions - check if user owns enough shares
+    if (formData.type === "Sell" && !isEditMode) {
+      const asset = portfolioData.find(a => a.ticker === formData.ticker);
+      const availableQuantity = asset ? asset.quantity : 0;
+      if (quantity > availableQuantity) {
+        newErrors.quantity = `You only own ${availableQuantity} ${formData.ticker}. Cannot sell more than you own.`;
+      }
+    }
+
     // price must be a positive number
+    const priceStr = String(formData.price || "").trim();
     const price = Number(formData.price);
-    if (!formData.price || formData.price.trim().length === 0) {
+    if (!priceStr || priceStr.length === 0) {
       newErrors.price = "Price is required";
     } else if (isNaN(price) || price <= 0) {
       newErrors.price = "Price must be a positive number";
@@ -376,7 +431,7 @@ export default function TransactionFormModal({
         {/* modal header */}
         <div className="p-4 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--bg-card)]">
           <h2 className="text-lg font-bold text-[var(--text-primary)]">
-            {isEditMode ? "Edit transaction" : "Add transaction"}
+            {isEditMode ? "Edit Transaction" : "Add Transaction"}
           </h2>
           <button
             onClick={onClose}
@@ -390,29 +445,53 @@ export default function TransactionFormModal({
         {/* form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* buy/sell toggle buttons */}
-          <div className="flex gap-2 p-1 bg-[var(--bg-app)] rounded-lg border border-[var(--border-subtle)]">
-            <button
-              type="button"
-              onClick={() => setFormData((prev) => ({ ...prev, type: "Buy" }))}
-              className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
-                formData.type === "Buy"
-                  ? "bg-green-600 text-white shadow-lg shadow-green-900/20"
-                  : "text-[var(--text-secondary)] hover:text-white"
-              }`}
-            >
-              Buy
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormData((prev) => ({ ...prev, type: "Sell" }))}
-              className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
-                formData.type === "Sell"
-                  ? "bg-red-600 text-white shadow-lg shadow-red-900/20"
-                  : "text-[var(--text-secondary)] hover:text-white"
-              }`}
-            >
-              Sell
-            </button>
+          <div className="space-y-2">
+            <div className="flex gap-2 p-1 bg-[var(--bg-app)] rounded-lg border border-[var(--border-subtle)]">
+              <button
+                type="button"
+                onClick={() => setFormData((prev) => ({ ...prev, type: "Buy" }))}
+                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
+                  formData.type === "Buy"
+                    ? "bg-green-600 text-white shadow-lg shadow-green-900/20"
+                    : "text-[var(--text-secondary)] hover:text-white"
+                }`}
+              >
+                Buy
+              </button>
+              {(() => {
+                const asset = portfolioData.find(a => a.ticker === formData.ticker);
+                const hasShares = asset && asset.quantity > 0;
+                // Enable sell if: editing mode (to allow editing existing sells) OR has shares
+                // Disable if: no ticker entered OR ticker entered but no shares
+                const canSell = isEditMode || (formData.ticker && hasShares);
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (canSell) {
+                        setFormData((prev) => ({ ...prev, type: "Sell" }));
+                      }
+                    }}
+                    disabled={!canSell}
+                    className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
+                      formData.type === "Sell"
+                        ? "bg-red-600 text-white shadow-lg shadow-red-900/20"
+                        : canSell
+                        ? "text-[var(--text-secondary)] hover:text-white"
+                        : "text-[var(--text-secondary)] opacity-50 cursor-not-allowed"
+                    }`}
+                  >
+                    Sell
+                  </button>
+                );
+              })()}
+            </div>
+            {/* show message when sell is disabled */}
+            {!isEditMode && formData.ticker && !portfolioData.find(a => a.ticker === formData.ticker && a.quantity > 0) && (
+              <p className="text-xs text-[var(--text-secondary)] text-center">
+                You don't own any of this asset
+              </p>
+            )}
           </div>
 
           {/* ticker input with autocomplete */}
@@ -468,7 +547,7 @@ export default function TransactionFormModal({
                     onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
                     placeholder="e.g. BTC, AAPL"
                     autoComplete="off"
-                    className={`flex-1 bg-[var(--bg-app)] border rounded-lg px-4 py-3 text-base font-bold text-[var(--text-primary)] focus:outline-none transition-colors uppercase disabled:opacity-50 ${
+                    className={`flex-1 bg-[var(--bg-app)] border rounded-lg px-4 py-3 text-base font-bold text-[var(--text-primary)] focus:outline-none transition-colors disabled:opacity-50 ${
                       errors.ticker
                         ? "border-red-500 focus:border-red-500"
                         : "border-[var(--border-subtle)] focus:border-[var(--text-secondary)]"
@@ -518,6 +597,51 @@ export default function TransactionFormModal({
                   ))}
                 </ul>
               )}
+
+              {/* asset type selector - show when ticker is entered but not matched */}
+              {formData.ticker && !formData.name && !isEditMode && (
+                <div className="mt-2 space-y-1">
+                  <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                    Asset Type
+                  </label>
+                  <div className="flex gap-2 p-1 bg-[var(--bg-app)] rounded-lg border border-[var(--border-subtle)]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData((prev) => ({ ...prev, assetType: "stock" }));
+                        // try to fetch price when asset type changes
+                        if (formData.ticker) {
+                          fetchCurrentPrice(formData.ticker, "Stock");
+                        }
+                      }}
+                      className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
+                        formData.assetType === "stock"
+                          ? "bg-[var(--accent-blue)] text-white shadow-lg"
+                          : "text-[var(--text-secondary)] hover:text-white"
+                      }`}
+                    >
+                      Stock
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData((prev) => ({ ...prev, assetType: "crypto" }));
+                        // try to fetch price when asset type changes
+                        if (formData.ticker) {
+                          fetchCurrentPrice(formData.ticker, "Crypto");
+                        }
+                      }}
+                      className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
+                        formData.assetType === "crypto"
+                          ? "bg-[var(--accent-blue)] text-white shadow-lg"
+                          : "text-[var(--text-secondary)] hover:text-white"
+                      }`}
+                    >
+                      Crypto
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -550,21 +674,28 @@ export default function TransactionFormModal({
               <label className="text-xs font-semibold text-[var(--text-secondary)]">
                 Price
               </label>
-              <input
-                name="price"
-                type="number"
-                step="any"
-                min="0"
-                value={formData.price}
-                onChange={handleChange}
-                placeholder="0.00"
-                disabled={isSubmitting}
-                className={`w-full bg-[var(--bg-app)] border rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none transition-colors disabled:opacity-50 ${
-                  errors.price
-                    ? "border-red-500 focus:border-red-500"
-                    : "border-[var(--border-subtle)] focus:border-[var(--text-secondary)]"
-                }`}
-              />
+              <div className="relative">
+                <input
+                  name="price"
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={formData.price}
+                  onChange={handleChange}
+                  placeholder={isFetchingPrice ? "Loading..." : "0.00"}
+                  disabled={isSubmitting || isFetchingPrice}
+                  className={`w-full bg-[var(--bg-app)] border rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none transition-colors disabled:opacity-50 ${
+                    errors.price
+                      ? "border-red-500 focus:border-red-500"
+                      : "border-[var(--border-subtle)] focus:border-[var(--text-secondary)]"
+                  }`}
+                />
+                {isFetchingPrice && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <SpinnerGap size={16} className="animate-spin text-[var(--text-secondary)]" />
+                  </div>
+                )}
+              </div>
               {errors.price && (
                 <p className="text-xs text-red-500 mt-1">{errors.price}</p>
               )}
