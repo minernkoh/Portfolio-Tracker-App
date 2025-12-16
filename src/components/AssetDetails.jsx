@@ -3,10 +3,11 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeftIcon, PencilSimpleIcon, TrendUpIcon, TrendDownIcon, PlusIcon } from '@phosphor-icons/react';
+import { ArrowLeftIcon, PencilSimpleIcon, TrendUpIcon, TrendDownIcon } from '@phosphor-icons/react';
 import { formatCurrency, calculatePortfolioData, formatDateTime } from '../services/utils';
 import Layout from './Layout';
 import TransactionFormModal from './TransactionFormModal';
+import AddTransactionButton from './AddTransactionButton';
 import {
   useTransactions,
   usePrices,
@@ -116,10 +117,16 @@ export default function AssetDetails() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto py-10 animate-fade-in">
-      {/* back button */}
-      <Link to="/" className="inline-flex items-center gap-2 text-[var(--text-secondary)] hover:text-white mb-6 transition-colors">
-        <ArrowLeftIcon size={20} /> Back to Dashboard
-      </Link>
+      {/* back button and add transaction button */}
+      <div className="flex items-center justify-between mb-6">
+        <Link to="/" className="inline-flex items-center gap-2 text-[var(--text-secondary)] hover:text-white transition-colors">
+          <ArrowLeftIcon size={20} /> Back to Dashboard
+        </Link>
+        <AddTransactionButton
+          onClick={openAddModal}
+          disabled={addTransaction.isPending}
+        />
+      </div>
       
       {/* asset header card */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 mb-6">
@@ -187,19 +194,9 @@ export default function AssetDetails() {
 
       {/* transaction history table */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl overflow-hidden">
-        <div className="p-6 border-b border-[var(--border-subtle)] flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-white">Transaction history</h2>
-            <p className="text-sm text-[var(--text-secondary)] mt-1">{asset.transactions?.length || 0} transactions</p>
-          </div>
-          <button
-            onClick={openAddModal}
-            disabled={addTransaction.isPending}
-            className="flex items-center gap-2 px-4 py-2 bg-[var(--text-primary)] text-[var(--bg-app)] font-bold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            <PlusIcon size={18} weight="bold" />
-            Add Transaction
-          </button>
+        <div className="p-6 border-b border-[var(--border-subtle)]">
+          <h2 className="text-lg font-bold text-white">Transaction History</h2>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">{asset.transactions?.length || 0} transactions</p>
         </div>
         
         <div className="overflow-x-auto">

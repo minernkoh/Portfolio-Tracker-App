@@ -6,6 +6,7 @@ import Layout from "./Layout";
 import PortfolioCharts from "./PortfolioCharts";
 import PortfolioTable from "./PortfolioTable";
 import TransactionFormModal from "./TransactionFormModal";
+import AddTransactionButton from "./AddTransactionButton";
 import {
   formatCurrency,
   calculatePortfolioData,
@@ -22,7 +23,6 @@ import {
 import {
   EyeIcon,
   EyeSlashIcon,
-  PlusIcon,
   PencilSimpleIcon,
   ArrowClockwiseIcon,
 } from "@phosphor-icons/react";
@@ -354,13 +354,10 @@ export default function Dashboard() {
           {/* action buttons */}
           <div className="flex flex-col items-end gap-4">
             <div className="flex items-center gap-2">
-              <button
+              <AddTransactionButton
                 onClick={() => openAddModal()}
                 disabled={addTransaction.isPending}
-                className="flex items-center gap-2 bg-[var(--accent-blue)] text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-600 transition-colors disabled:opacity-50"
-              >
-                <PlusIcon size={16} /> Add Transaction
-              </button>
+              />
             </div>
           </div>
         </div>

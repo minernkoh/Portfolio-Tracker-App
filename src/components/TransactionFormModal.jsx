@@ -750,7 +750,7 @@ export default function TransactionFormModal({
               ) : (
                 <>
                   <CheckIcon size={18} weight="bold" />
-                  {isEditMode ? "Update transaction" : "Add transaction"}
+                  {isEditMode ? "Update Transaction" : "Add Transaction"}
                 </>
               )}
             </button>
