@@ -1,9 +1,8 @@
-# Portfolio Tracker
+# 📈 Portfolio Tracker
 
 A modern, investment portfolio tracker built with React. Track your stocks and cryptocurrencies in one place with real-time price updates, visual analytics, and comprehensive transaction management. The app calculates your profit/loss using industry-standard FIFO (First In, First Out) cost basis methodology, giving you accurate insights into your investment performance.
 
-
-## Tech Stack
+## 🛠️ Tech Stack
 
 - **Frontend**: React 19, React Router DOM
 - **State Management**: TanStack Query (React Query) for server state
@@ -15,9 +14,9 @@ A modern, investment portfolio tracker built with React. Track your stocks and c
 - **Icons**: Phosphor Icons
 - **Notifications**: React Hot Toast
 
-## Features
+## ✨ Features
 
-### Core Features
+### 🎯 Core Features
 
 - Track stocks and cryptocurrencies with real-time price updates
 - Add, edit, and delete buy/sell transactions
@@ -26,7 +25,7 @@ A modern, investment portfolio tracker built with React. Track your stocks and c
 - Asset allocation pie chart with percentage breakdown
 - Individual asset detail pages with transaction history
 
-### Enhancements
+### 🚀 Enhancements
 
 - **Automatic price refresh** - Prices update every 60 seconds in the background
 - **Optimistic UI updates** - Instant feedback when adding/editing transactions
@@ -39,7 +38,7 @@ A modern, investment portfolio tracker built with React. Track your stocks and c
 - **Form validation** - Prevents invalid transactions (e.g., selling more than you own, future dates)
 - **Retry mechanism** - Automatic retry on failed requests with user-friendly error messages
 
-## Challenges Faced
+## 🎯 Challenges Faced
 
 - **API Rate Limiting**: Free-tier APIs have strict rate limits, causing failures when fetching prices for many assets. I solved this by implementing a multi-layer caching strategy with localStorage, staggering API requests by 200ms, and gracefully falling back to cached data (even expired) when APIs fail.
 
@@ -47,7 +46,7 @@ A modern, investment portfolio tracker built with React. Track your stocks and c
 
 - **Airtable Field Stability**: Initially, I used field names to interact with Airtable, but renaming fields in the UI broke the app. I refactored to use field IDs instead of names, making the integration resilient to UI changes in the Airtable dashboard.
 
-## What I Learned
+## 📚 What I Learned
 
 - **TanStack Query for Server State**: Migrating from manual state management to TanStack Query taught me the power of declarative data fetching. The library handles caching, background refetching, optimistic updates, and error states automatically, reducing boilerplate code by ~40% while improving user experience with instant UI feedback and automatic price updates.
 
@@ -57,7 +56,7 @@ A modern, investment portfolio tracker built with React. Track your stocks and c
 
 - **Financial Domain Knowledge**: Building a portfolio tracker required understanding investment concepts like cost basis, unrealized gains, and FIFO accounting. This taught me the importance of domain research before implementing business logic.
 
-## Future Enhancements
+## 🔮 Future Enhancements
 
 - Historical price charts for individual assets
 - Multiple portfolio support (e.g., retirement, trading accounts)
@@ -67,9 +66,9 @@ A modern, investment portfolio tracker built with React. Track your stocks and c
 - Dark/light theme toggle
 - PWA support for offline access
 
-## More Information
+## 📖 More Information
 
-### Project Structure
+### 📁 Project Structure
 
 ```
 src/
@@ -91,7 +90,7 @@ src/
 └── ErrorBoundary.jsx           # Error handling wrapper
 ```
 
-### Key Components
+### 🧩 Key Components
 
 **Dashboard.jsx**  
 The central hub of the application. Uses TanStack Query hooks (`useTransactions`, `usePrices`) to fetch data with automatic caching and background refetching. Prices automatically refresh every 60 seconds. The component calculates portfolio metrics, manages UI state (tabs, modals, filters), and renders summary cards, charts, and the assets table. Optimistic updates provide instant feedback when adding/editing transactions.
@@ -108,7 +107,7 @@ A modal form for adding and editing transactions. It includes an autocomplete fe
 **AssetDetails.jsx**  
 Shows detailed information for a single asset, accessed via `/asset/:ticker`. Displays the asset's current holdings, market value, average price, and complete transaction history. Users can edit individual transactions directly from this page.
 
-### Custom Hooks
+### 🪝 Custom Hooks
 
 **usePortfolio.js**  
 Centralized data fetching layer using TanStack Query. Provides hooks for:
@@ -120,7 +119,7 @@ Centralized data fetching layer using TanStack Query. Provides hooks for:
 
 All hooks handle loading states, errors, and caching automatically. Optimistic updates provide instant UI feedback before server confirmation.
 
-### Services
+### ⚙️ Services
 
 **airtable.js**  
 Handles all database operations with Airtable's REST API. Uses field IDs instead of field names for stability. Provides functions to fetch, create, update, and delete transactions. Normalizes data format between the API response and the application's internal structure.
@@ -131,7 +130,7 @@ Manages price fetching from TwelveData (stocks) and CoinGecko (crypto). Implemen
 **utils.js**  
 Contains pure utility functions for formatting and calculations. The `calculatePortfolioData` function is the core calculation engine—it processes all transactions using FIFO methodology to determine current holdings, cost basis, and unrealized gains/losses for each asset.
 
-### Data Flow
+### 🔄 Data Flow
 
 1. **Initial Load**: 
    - Dashboard mounts → `useTransactions()` hook fetches from Airtable (cached for 5 min)
@@ -156,7 +155,7 @@ Contains pure utility functions for formatting and calculations. The `calculateP
    - Automatic garbage collection after 10 minutes of inactivity
    - Refetch on window focus for fresh data
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
 
@@ -178,7 +177,7 @@ cd Portfolio-Tracker-App
 npm install
 ```
 
-3. Set up environment variables (see below)
+3. Set up environment variables (see Environment Variables section below)
 
 4. Start the development server
 ```bash
@@ -187,7 +186,7 @@ npm run dev
 
 5. Open [http://localhost:5173](http://localhost:5173) in your browser
 
-## Environment Variables
+## 🔐 Environment Variables
 
 Create a `.env` file in the root directory with the following variables:
 
