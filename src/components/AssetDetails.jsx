@@ -3,11 +3,15 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeftIcon, PencilSimpleIcon, TrendUpIcon, TrendDownIcon } from '@phosphor-icons/react';
+import { ArrowLeftIcon, TrendUpIcon, TrendDownIcon } from '@phosphor-icons/react';
 import { formatCurrency, calculatePortfolioData, formatDateTime } from '../services/utils';
 import Layout from './Layout';
 import TransactionFormModal from './TransactionFormModal';
-import AddTransactionButton from './AddTransactionButton';
+import AddTransactionButton from './ui/AddTransactionButton';
+import LoadingState from './ui/LoadingState';
+import TransactionTypeBadge from './ui/TransactionTypeBadge';
+import EditButton from './ui/EditButton';
+import EmptyState from './ui/EmptyState';
 import {
   useTransactions,
   usePrices,
@@ -85,13 +89,7 @@ export default function AssetDetails() {
   
   // if loading
   if (isLoading) {
-    return (
-      <Layout>
-        <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-white/50">
-          Loading data...
-        </div>
-      </Layout>
-    );
+    return <LoadingState />;
   }
   
   // if asset not found, show error message
@@ -219,13 +217,7 @@ export default function AssetDetails() {
                     <td className="py-4 px-6 text-sm text-white/90">{formatDateTime(tx.date)}</td>
                     {/* buy/sell badge */}
                     <td className="py-4 px-6">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium border ${
-                        tx.type === 'Buy' 
-                        ? 'bg-green-500/10 text-green-500 border-green-500/20' 
-                        : 'bg-red-500/10 text-red-500 border-red-500/20'
-                      }`}>
-                        {tx.type}
-                      </span>
+                      <TransactionTypeBadge type={tx.type} />
                     </td>
                     <td className="py-4 px-6 text-right text-sm font-medium">{formatCurrency(tx.price)}</td>
                     <td className="py-4 px-6 text-right text-sm text-[var(--text-secondary)]">
@@ -234,23 +226,15 @@ export default function AssetDetails() {
                     <td className="py-4 px-6 text-right text-sm font-medium">{formatCurrency(tx.quantity * tx.price)}</td>
                     {/* edit button */}
                     <td className="py-4 px-6 text-right">
-                      <button 
+                      <EditButton
                         onClick={() => openEditModal(tx)}
                         disabled={updateTransaction.isPending}
-                        className="p-1 text-[var(--text-secondary)] hover:text-white transition-colors disabled:opacity-50"
-                        title="Edit transaction"
-                      >
-                        <PencilSimpleIcon size={18} />
-                      </button>
+                      />
                     </td>
                   </tr>
                 ))
               ) : (
-                <tr>
-                  <td colSpan="6" className="py-8 text-center text-[var(--text-secondary)]">
-                    No transactions recorded.
-                  </td>
-                </tr>
+                <EmptyState message="No transactions recorded." colSpan={6} />
               )}
             </tbody>
           </table>

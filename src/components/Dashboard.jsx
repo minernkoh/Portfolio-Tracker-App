@@ -6,7 +6,14 @@ import Layout from "./Layout";
 import PortfolioCharts from "./PortfolioCharts";
 import PortfolioTable from "./PortfolioTable";
 import TransactionFormModal from "./TransactionFormModal";
-import AddTransactionButton from "./AddTransactionButton";
+import AddTransactionButton from "./ui/AddTransactionButton";
+import LoadingState from "./ui/LoadingState";
+import TabSwitcher from "./ui/TabSwitcher";
+import StatCard from "./ui/StatCard";
+import FilterButtons from "./ui/FilterButtons";
+import TransactionTypeBadge from "./ui/TransactionTypeBadge";
+import EditButton from "./ui/EditButton";
+import EmptyState from "./ui/EmptyState";
 import {
   formatCurrency,
   calculatePortfolioData,
@@ -23,7 +30,6 @@ import {
 import {
   EyeIcon,
   EyeSlashIcon,
-  PencilSimpleIcon,
   ArrowClockwiseIcon,
 } from "@phosphor-icons/react";
 
@@ -207,11 +213,7 @@ export default function Dashboard() {
 
   // show loading screen while data is being fetched
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-white/50">
-        Loading data...
-      </div>
-    );
+    return <LoadingState fullScreen={false} />;
   }
 
   // show error screen with retry button if loading failed
@@ -327,28 +329,14 @@ export default function Dashboard() {
             </div>
 
             {/* tab switcher - overview vs transactions */}
-            <div className="flex gap-4 border-b border-[var(--border-subtle)] w-fit mt-2">
-              <button
-                onClick={() => setActiveTab("overview")}
-                className={`pb-2 text-sm font-bold transition-all border-b-2 ${
-                  activeTab === "overview"
-                    ? "border-[var(--accent-blue)] text-white"
-                    : "border-transparent text-[var(--text-secondary)] hover:text-white"
-                }`}
-              >
-                Overview
-              </button>
-              <button
-                onClick={() => setActiveTab("transactions")}
-                className={`pb-2 text-sm font-bold transition-all border-b-2 ${
-                  activeTab === "transactions"
-                    ? "border-[var(--accent-blue)] text-white"
-                    : "border-transparent text-[var(--text-secondary)] hover:text-white"
-                }`}
-              >
-                Transactions
-              </button>
-            </div>
+            <TabSwitcher
+              tabs={[
+                { id: "overview", label: "Overview" },
+                { id: "transactions", label: "Transactions" },
+              ]}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+            />
           </div>
 
           {/* action buttons */}
@@ -368,102 +356,81 @@ export default function Dashboard() {
             {/* summary cards showing key metrics */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* all-time profit/loss card */}
-              <div className="bg-[var(--bg-card)] p-4 rounded-xl border border-[var(--border-subtle)]">
-                <div className="text-[var(--text-secondary)] text-xs font-bold uppercase mb-1">
-                  All-time profit/loss
-                </div>
-                <div
-                  className={`text-lg font-bold ${
-                    isPositive ? "text-green" : "text-red"
-                  }`}
-                >
-                  {isPositive ? "+" : ""}
-                  {formatCurrency(totalPnL, hideValues)}
-                </div>
-                <div
-                  className={`text-xs font-bold ${
-                    isPositive ? "text-green" : "text-red"
-                  }`}
-                >
-                  {isPositive ? "▲" : "▼"}{" "}
-                  {!hideValues
+              <StatCard
+                label="All-time profit/loss"
+                value={totalPnL}
+                valueFormatted={`${isPositive ? "+" : ""}${formatCurrency(totalPnL, hideValues)}`}
+                subtitle={`${isPositive ? "▲" : "▼"} ${
+                  !hideValues
                     ? totalCostBasis > 0
                       ? ((totalPnL / totalCostBasis) * 100).toFixed(2)
                       : "0.00"
-                    : "**"}
-                  %
-                </div>
-              </div>
+                    : "**"
+                }%`}
+                isPositive={isPositive}
+                hideValues={hideValues}
+              />
 
               {/* cost basis card */}
-              <div className="bg-[var(--bg-card)] p-4 rounded-xl border border-[var(--border-subtle)]">
-                <div className="text-[var(--text-secondary)] text-xs font-bold uppercase mb-1">
-                  Cost basis
-                </div>
-                <div className="text-lg font-bold text-white">
-                  {formatCurrency(totalCostBasis, hideValues)}
-                </div>
-              </div>
+              <StatCard
+                label="Cost basis"
+                value={totalCostBasis}
+                hideValues={hideValues}
+              />
 
               {/* best performer card */}
-              <div className="bg-[var(--bg-card)] p-4 rounded-xl border border-[var(--border-subtle)]">
-                <div className="text-[var(--text-secondary)] text-xs font-bold uppercase mb-1">
-                  Best performer
-                </div>
-                {bestPerformer ? (
-                  <>
-                    <div className="text-lg font-bold text-white truncate">
-                      {bestPerformer.name}
-                    </div>
-                    <div className="text-xs font-bold text-green">
-                      ▲ +
-                      {!hideValues
-                        ? bestPerformer.totalCost > 0
-                          ? (
-                              (bestPerformer.pnl / bestPerformer.totalCost) *
-                              100
-                            ).toFixed(2)
-                          : "0.00"
-                        : "**"}
-                      %
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-sm text-[var(--text-secondary)]">-</div>
-                )}
-              </div>
+              {bestPerformer ? (
+                <StatCard
+                  label="Best performer"
+                  value={bestPerformer.name}
+                  valueFormatted={bestPerformer.name}
+                  subtitle={`▲ +${
+                    !hideValues
+                      ? bestPerformer.totalCost > 0
+                        ? (
+                            (bestPerformer.pnl / bestPerformer.totalCost) *
+                            100
+                          ).toFixed(2)
+                        : "0.00"
+                      : "**"
+                  }%`}
+                  isPositive={true}
+                  hideValues={hideValues}
+                />
+              ) : (
+                <StatCard
+                  label="Best performer"
+                  value="-"
+                  valueFormatted="-"
+                />
+              )}
 
               {/* worst performer card */}
-              <div className="bg-[var(--bg-card)] p-4 rounded-xl border border-[var(--border-subtle)]">
-                <div className="text-[var(--text-secondary)] text-xs font-bold uppercase mb-1">
-                  Worst performer
-                </div>
-                {worstPerformer ? (
-                  <>
-                    <div className="text-lg font-bold text-white truncate">
-                      {worstPerformer.name}
-                    </div>
-                    <div
-                      className={`text-xs font-bold ${
-                        worstPerformer.pnl >= 0 ? "text-green" : "text-red"
-                      }`}
-                    >
-                      {worstPerformer.pnl >= 0 ? "▲ +" : "▼"}{" "}
-                      {!hideValues
-                        ? worstPerformer.totalCost > 0
-                          ? (
-                              (worstPerformer.pnl / worstPerformer.totalCost) *
-                              100
-                            ).toFixed(2)
-                          : "0.00"
-                        : "**"}
-                      %
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-sm text-[var(--text-secondary)]">-</div>
-                )}
-              </div>
+              {worstPerformer ? (
+                <StatCard
+                  label="Worst performer"
+                  value={worstPerformer.name}
+                  valueFormatted={worstPerformer.name}
+                  subtitle={`${worstPerformer.pnl >= 0 ? "▲ +" : "▼"} ${
+                    !hideValues
+                      ? worstPerformer.totalCost > 0
+                        ? (
+                            (worstPerformer.pnl / worstPerformer.totalCost) *
+                            100
+                          ).toFixed(2)
+                        : "0.00"
+                      : "**"
+                  }%`}
+                  isPositive={worstPerformer.pnl >= 0}
+                  hideValues={hideValues}
+                />
+              ) : (
+                <StatCard
+                  label="Worst performer"
+                  value="-"
+                  valueFormatted="-"
+                />
+              )}
             </div>
 
             {/* charts section */}
@@ -480,21 +447,12 @@ export default function Dashboard() {
                 <h2 className="text-lg font-bold text-white">Assets</h2>
 
                 {/* filter buttons */}
-                <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] p-1 rounded-lg flex items-center gap-1 w-fit">
-                  {["All", "Stock", "Crypto"].map((type) => (
-                    <button
-                      key={type}
-                      onClick={() => setFilterType(type)}
-                      className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                        filterType === type
-                          ? "bg-[var(--border-highlight)] text-white shadow-sm"
-                          : "text-[var(--text-secondary)] hover:text-white"
-                      }`}
-                    >
-                      {type === "Stock" ? "Stocks" : type}
-                    </button>
-                  ))}
-                </div>
+                <FilterButtons
+                  options={["All", "Stock", "Crypto"]}
+                  activeFilter={filterType}
+                  onFilterChange={setFilterType}
+                  labelMap={{ Stock: "Stocks" }}
+                />
               </div>
 
               <PortfolioTable
@@ -557,14 +515,7 @@ export default function Dashboard() {
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)]">
                   {allTransactionsSorted.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan="7"
-                        className="py-8 text-center text-[var(--text-secondary)]"
-                      >
-                        No transactions found.
-                      </td>
-                    </tr>
+                    <EmptyState message="No transactions found." colSpan={7} />
                   ) : (
                     allTransactionsSorted.map((tx) => (
                       <tr
@@ -575,15 +526,7 @@ export default function Dashboard() {
                           {formatDateTime(tx.date)}
                         </td>
                         <td className="py-4 px-6">
-                          <span
-                            className={`text-xs font-bold px-2 py-1 rounded ${
-                              tx.type === "Buy"
-                                ? "text-green bg-green-900/20"
-                                : "text-red bg-red-900/20"
-                            }`}
-                          >
-                            {tx.type}
-                          </span>
+                          <TransactionTypeBadge type={tx.type} variant="compact" />
                         </td>
                         <td className="py-4 px-6 text-sm font-bold text-white">
                           {tx.ticker}
@@ -598,12 +541,7 @@ export default function Dashboard() {
                           {formatCurrency(tx.quantity * tx.price, hideValues)}
                         </td>
                         <td className="py-4 px-6 text-right">
-                          <button
-                            onClick={() => openEditModal(tx)}
-                            className="text-[var(--text-secondary)] hover:text-white transition-colors"
-                          >
-                            <PencilSimpleIcon size={18} />
-                          </button>
+                          <EditButton onClick={() => openEditModal(tx)} />
                         </td>
                       </tr>
                     ))
