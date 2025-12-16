@@ -20,8 +20,12 @@ export const queryKeys = {
 // hook to check if airtable is configured
 export function useAirtableStatus() {
   const hasAirtable = !!(
-    import.meta.env.VITE_AIRTABLE_API_KEY &&
-    import.meta.env.VITE_AIRTABLE_BASE_ID
+    // double bang operator - used to convert any value to a boolean
+    // it is needed because we do not want the API key to be revealed
+    (
+      import.meta.env.VITE_AIRTABLE_API_KEY &&
+      import.meta.env.VITE_AIRTABLE_BASE_ID
+    )
   );
   return { isEnabled: hasAirtable };
 }
