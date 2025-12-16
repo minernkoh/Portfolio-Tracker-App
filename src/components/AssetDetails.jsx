@@ -4,7 +4,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeftIcon, TrendUpIcon, TrendDownIcon } from '@phosphor-icons/react';
-import { formatCurrency, calculatePortfolioData, formatDateTime } from '../services/utils';
+import { formatCurrency, calculatePortfolioData, formatDateTime, truncateName } from '../services/utils';
 import Layout from './Layout';
 import TransactionFormModal from './TransactionFormModal';
 import AddTransactionButton from './ui/AddTransactionButton';
@@ -144,7 +144,7 @@ export default function AssetDetails() {
               />
             )}
             <div>
-              <h1 className="text-2xl font-bold text-white">{asset.name}</h1>
+              <h1 className="text-2xl font-bold text-white" title={asset.name}>{truncateName(asset.name, 50)}</h1>
               <p className="text-[var(--text-secondary)]">{asset.ticker} • {asset.assetType}</p>
             </div>
           </div>

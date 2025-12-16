@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { PlusIcon, DotsThreeIcon, TrashIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
-import { formatCurrency } from '../services/utils';
+import { formatCurrency, truncateName } from '../services/utils';
 
 export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddTransaction }) {
   // state for dropdown menu (the three dots menu)
@@ -139,7 +139,7 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                     )}
                     <div>
                       <div className="font-bold text-sm text-[var(--text-primary)]">
-                        {asset.ticker} <span className="mx-1 text-[var(--text-secondary)]">|</span> <span className="text-[var(--text-secondary)] font-normal">{asset.name}</span>
+                        {asset.ticker} <span className="mx-1 text-[var(--text-secondary)]">|</span> <span className="text-[var(--text-secondary)] font-normal" title={asset.name}>{truncateName(asset.name, 25)}</span>
                       </div>
                     </div>
                   </Link>

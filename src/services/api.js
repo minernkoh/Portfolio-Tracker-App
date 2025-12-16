@@ -212,6 +212,7 @@ const fetchStockPrice = async (symbol, useCache = true) => {
       high: parseFloat(data.high || 0),
       low: parseFloat(data.low || 0),
       volume: parseInt(data.volume || 0),
+      name: data.name || null, // extract company name from API response
     };
 
     // save to cache for future use
@@ -285,6 +286,7 @@ export const fetchStockPrices = async (tickers = []) => {
                   currentPrice: priceData.currentPrice,
                   priceChange24h: priceData.priceChange24h,
                   logo: getStockLogo(ticker),
+                  name: priceData.name || null, // include company name
                 },
               });
             } else {
@@ -296,6 +298,7 @@ export const fetchStockPrices = async (tickers = []) => {
                   currentPrice: 0,
                   priceChange24h: 0,
                   logo: getStockLogo(ticker),
+                  name: null,
                 },
               });
             }

@@ -14,7 +14,7 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-import { formatCurrency, calculateValue } from "../services/utils";
+import { formatCurrency, calculateValue, truncateName } from "../services/utils";
 
 // colors for the pie chart slices
 const COLORS = [
@@ -458,8 +458,8 @@ export default function PortfolioCharts({
                         boxShadow: `0 0 8px ${COLORS[index % COLORS.length]}`,
                       }}
                     ></div>
-                    <span className="text-[var(--text-secondary)] truncate font-medium text-[11px]">
-                      {entry.name}
+                    <span className="text-[var(--text-secondary)] truncate font-medium text-[11px]" title={entry.name}>
+                      {truncateName(entry.name, 20)}
                     </span>
                   </div>
                   <span className="text-white font-bold text-[11px] ml-1">

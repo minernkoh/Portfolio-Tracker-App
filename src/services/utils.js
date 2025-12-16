@@ -29,6 +29,15 @@ export const formatPercentage = (value) => {
   return value > 0 ? `+${formatted}` : formatted;
 };
 
+// truncate a string to a maximum length and add ellipsis if needed
+// example: truncateName("Apple Inc.", 10) returns "Apple Inc."
+// example: truncateName("International Business Machines Corporation", 20) returns "International Busin..."
+export const truncateName = (name, maxLength = 30) => {
+  if (!name || typeof name !== "string") return name;
+  if (name.length <= maxLength) return name;
+  return name.substring(0, maxLength - 3) + "...";
+};
+
 // format a date string to show date and time nicely (removes T and Z)
 // example: formatDateTime("2024-01-15T14:30:00Z") returns "2024-01-15 14:30"
 export const formatDateTime = (dateString) => {
@@ -137,7 +146,11 @@ export const calculatePortfolioData = (transactions, prices) => {
         currentPrice: 0,
         priceChange24h: 0,
         logo: null,
+        name: null,
       };
+
+      // use company name from API if available, otherwise fall back to transaction name or ticker
+      const companyName = priceData.name || asset.name || asset.ticker;
 
       // calculate average buy price (cost basis per share/coin)
       const avgPrice =
@@ -159,7 +172,7 @@ export const calculatePortfolioData = (transactions, prices) => {
       return {
         id: asset.ticker,
         ticker: asset.ticker,
-        name: asset.name,
+        name: companyName,
         assetType: asset.assetType,
         quantity: asset.totalQuantity,
         avgPrice: avgPrice,

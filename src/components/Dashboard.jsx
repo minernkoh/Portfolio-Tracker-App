@@ -17,6 +17,7 @@ import EmptyState from "./ui/EmptyState";
 import {
   formatCurrency,
   calculatePortfolioData,
+  truncateName,
   formatDateTime,
 } from "../services/utils";
 import {
@@ -383,7 +384,7 @@ export default function Dashboard() {
                 <StatCard
                   label="Best performer"
                   value={bestPerformer.name}
-                  valueFormatted={bestPerformer.name}
+                  valueFormatted={truncateName(bestPerformer.name, 20)}
                   subtitle={`▲ +${
                     !hideValues
                       ? bestPerformer.totalCost > 0
@@ -410,7 +411,7 @@ export default function Dashboard() {
                 <StatCard
                   label="Worst performer"
                   value={worstPerformer.name}
-                  valueFormatted={worstPerformer.name}
+                  valueFormatted={truncateName(worstPerformer.name, 20)}
                   subtitle={`${worstPerformer.pnl >= 0 ? "▲ +" : "▼"} ${
                     !hideValues
                       ? worstPerformer.totalCost > 0
