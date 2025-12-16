@@ -69,11 +69,10 @@ const getCachedPrices = (tickers, cacheKey) => {
 
 // helper function to get any available cached price (fresh or expired)
 // this centralizes the fallback logic
-const getAnyCachedPrice = (symbol, cacheKey, reason) => {
+const getAnyCachedPrice = (symbol, cacheKey) => {
   // first, try to get a non-expired cache value
   const freshCache = getCachedPrice(symbol, cacheKey);
   if (freshCache) {
-    console.log(`using cached price for ${symbol} (${reason})`);
     return freshCache;
   }
 
@@ -82,7 +81,6 @@ const getAnyCachedPrice = (symbol, cacheKey, reason) => {
     const cached = localStorage.getItem(cacheKey);
     const cacheData = cached ? JSON.parse(cached) : {};
     if (cacheData[symbol]) {
-      console.log(`using expired cache for ${symbol} (${reason})`);
       return cacheData[symbol].data;
     }
   } catch (e) {
@@ -105,9 +103,7 @@ const fetchStockPrice = async (symbol, useCache = true) => {
   // check if we have an api key, if not show warning and try cache
   if (!TWELVE_DATA_API_KEY) {
     console.warn("twelvedata api key not found");
-    return useCache
-      ? getAnyCachedPrice(symbol, CACHE_KEY_STOCKS, "api key missing")
-      : null;
+    return useCache ? getAnyCachedPrice(symbol, CACHE_KEY_STOCKS) : null;
   }
 
   try {
@@ -136,7 +132,7 @@ const fetchStockPrice = async (symbol, useCache = true) => {
 
       // try cache as fallback
       if (useCache)
-        return getAnyCachedPrice(symbol, CACHE_KEY_STOCKS, "api http error");
+        return getAnyCachedPrice(symbol, CACHE_KEY_STOCKS);
 
       throw new Error(`http error! status: ${response.status}`);
     }
@@ -163,7 +159,7 @@ const fetchStockPrice = async (symbol, useCache = true) => {
 
       // try cache as fallback
       if (useCache)
-        return getAnyCachedPrice(symbol, CACHE_KEY_STOCKS, "api data error");
+        return getAnyCachedPrice(symbol, CACHE_KEY_STOCKS);
 
       return null;
     }
@@ -187,7 +183,7 @@ const fetchStockPrice = async (symbol, useCache = true) => {
 
       // try cache as fallback
       if (useCache)
-        return getAnyCachedPrice(symbol, CACHE_KEY_STOCKS, "api status error");
+        return getAnyCachedPrice(symbol, CACHE_KEY_STOCKS);
 
       return null;
     }
@@ -197,9 +193,7 @@ const fetchStockPrice = async (symbol, useCache = true) => {
     if (!data.close) {
       console.warn(`no price data (close) for ${symbol}:`, data);
       // try cache as fallback and return null if nothing is found
-      return useCache
-        ? getAnyCachedPrice(symbol, CACHE_KEY_STOCKS, "no price in response")
-        : null;
+      return useCache ? getAnyCachedPrice(symbol, CACHE_KEY_STOCKS) : null;
     }
 
     const currentPrice = parseFloat(data.close);
@@ -226,15 +220,66 @@ const fetchStockPrice = async (symbol, useCache = true) => {
     console.error(`error fetching stock price for ${symbol}:`, error);
 
     // try cache as fallback on any other error
-    return useCache
-      ? getAnyCachedPrice(symbol, CACHE_KEY_STOCKS, "fetch error")
-      : null;
+    return useCache ? getAnyCachedPrice(symbol, CACHE_KEY_STOCKS) : null;
   }
+};
+
+// generate a deterministic color based on ticker (same ticker = same color)
+// uses a hash function to convert ticker to a hue value
+const getTickerColor = (ticker) => {
+  // simple hash function to convert ticker to a number
+  let hash = 0;
+  for (let i = 0; i < ticker.length; i++) {
+    hash = ticker.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // convert hash to a hue value (0-360)
+  // use modulo to ensure it's within valid range
+  const hue = Math.abs(hash) % 360;
+  
+  // use consistent saturation (70%) and lightness (50%) for cohesive look
+  // convert HSL to hex
+  const saturation = 70;
+  const lightness = 50;
+  
+  // convert HSL to RGB, then to hex
+  const h = hue / 360;
+  const s = saturation / 100;
+  const l = lightness / 100;
+  
+  let r, g, b;
+  if (s === 0) {
+    r = g = b = l; // achromatic
+  } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  
+  const toHex = (c) => {
+    const hex = Math.round(c * 255).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  };
+  
+  return `${toHex(r)}${toHex(g)}${toHex(b)}`;
 };
 
 export const getStockLogo = (ticker) => {
   // generate a simple avatar with the ticker letters
-  return `https://ui-avatars.com/api/?name=${ticker}&background=4f46e5&color=fff&bold=true`;
+  // use a deterministic random color based on the ticker
+  const color = getTickerColor(ticker);
+  return `https://ui-avatars.com/api/?name=${ticker}&background=${color}&color=fff&bold=true`;
 };
 
 // fetch prices for multiple stock tickers at once
@@ -369,10 +414,115 @@ const CRYPTO_MAP = {
   },
 };
 
+// cache for dynamically found crypto info (id, name, logo)
+const CRYPTO_INFO_CACHE_KEY = "portfolio_crypto_info_cache";
+const getCryptoInfoCache = () => {
+  try {
+    const cached = localStorage.getItem(CRYPTO_INFO_CACHE_KEY);
+    return cached ? JSON.parse(cached) : {};
+  } catch {
+    return {};
+  }
+};
+
+const setCryptoInfoCache = (ticker, info) => {
+  try {
+    const cache = getCryptoInfoCache();
+    cache[ticker] = info;
+    localStorage.setItem(CRYPTO_INFO_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // ignore cache errors
+  }
+};
+
+// search for crypto by ticker symbol using CoinGecko search API
+const searchCryptoByTicker = async (ticker) => {
+  // check cache first
+  const cache = getCryptoInfoCache();
+  if (cache[ticker]) {
+    return cache[ticker];
+  }
+
+  try {
+    const baseUrl = "https://api.coingecko.com/api/v3";
+    const headers = {};
+    if (COINGECKO_API_KEY) {
+      headers["x-cg-demo-api-key"] = COINGECKO_API_KEY;
+    }
+
+    // use search API to find coin by ticker symbol
+    const response = await fetch(
+      `${baseUrl}/search?query=${encodeURIComponent(ticker)}`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    
+    // find exact match by ticker symbol (case-insensitive)
+    if (data.coins && Array.isArray(data.coins)) {
+      const match = data.coins.find(
+        (coin) => coin.symbol?.toUpperCase() === ticker.toUpperCase()
+      );
+
+      if (match) {
+        const info = {
+          id: match.id,
+          name: match.name,
+          logo: match.large || match.thumb || `https://ui-avatars.com/api/?name=${ticker}&background=random`,
+        };
+        
+        // cache the result
+        setCryptoInfoCache(ticker, info);
+        return info;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`error searching for crypto ${ticker}:`, error);
+    return null;
+  }
+};
+
 const getCryptoCoinGeckoId = (ticker) => CRYPTO_MAP[ticker]?.id || null;
 const getCryptoLogo = (ticker) =>
   CRYPTO_MAP[ticker]?.logo ||
   `https://ui-avatars.com/api/?name=${ticker}&background=random`;
+
+// get crypto info (id, name, logo) - checks hardcoded map first, then searches dynamically
+export const getCryptoInfo = async (ticker) => {
+  // check hardcoded map first
+  if (CRYPTO_MAP[ticker]) {
+    return {
+      id: CRYPTO_MAP[ticker].id,
+      name: ticker, // will be overridden if we fetch from API
+      logo: CRYPTO_MAP[ticker].logo,
+    };
+  }
+
+  // check cache
+  const cache = getCryptoInfoCache();
+  if (cache[ticker]) {
+    return cache[ticker];
+  }
+
+  // search dynamically
+  const info = await searchCryptoByTicker(ticker);
+  if (info) {
+    return info;
+  }
+
+  // fallback if not found
+  return {
+    id: null,
+    name: ticker,
+    logo: `https://ui-avatars.com/api/?name=${ticker}&background=random`,
+  };
+};
 
 // helper to populate logos for a given price map
 const populateCryptoLogos = (priceMap) => {
@@ -404,10 +554,33 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
 
   try {
     // convert ticker symbols to coingecko ids
-    // for example, "BTC" becomes "bitcoin"
-    const cryptoIds = uncachedTickers
-      .map((ticker) => getCryptoCoinGeckoId(ticker))
-      .filter((id) => id !== null);
+    // first, get ids from hardcoded map
+    const tickerToIdMap = {};
+    const tickersNeedingSearch = [];
+
+    for (const ticker of uncachedTickers) {
+      const hardcodedId = getCryptoCoinGeckoId(ticker);
+      if (hardcodedId) {
+        tickerToIdMap[ticker] = hardcodedId;
+      } else {
+        tickersNeedingSearch.push(ticker);
+      }
+    }
+
+    // search for tickers not in hardcoded map
+    if (tickersNeedingSearch.length > 0) {
+      const searchPromises = tickersNeedingSearch.map(async (ticker) => {
+        const info = await searchCryptoByTicker(ticker);
+        if (info && info.id) {
+          tickerToIdMap[ticker] = info.id;
+        }
+        return { ticker, info };
+      });
+
+      await Promise.all(searchPromises);
+    }
+
+    const cryptoIds = Object.values(tickerToIdMap).filter((id) => id !== null);
 
     // if no valid ids found, return cached data only
     if (cryptoIds.length === 0) {
@@ -448,11 +621,7 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
 
       // try to get from cache (even expired) for uncached tickers
       uncachedTickers.forEach((ticker) => {
-        const cachedPrice = getAnyCachedPrice(
-          ticker,
-          CACHE_KEY_CRYPTO,
-          "api error"
-        );
+        const cachedPrice = getAnyCachedPrice(ticker, CACHE_KEY_CRYPTO);
         if (cachedPrice) {
           priceMap[ticker] = cachedPrice;
         }
@@ -466,13 +635,20 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
     // map the results back to ticker symbols
     // coingecko returns data with coin ids as keys, we need to convert back to tickers
     uncachedTickers.forEach((ticker) => {
-      const coinGeckoId = getCryptoCoinGeckoId(ticker);
+      const coinGeckoId = tickerToIdMap[ticker] || getCryptoCoinGeckoId(ticker);
       if (coinGeckoId && cryptoRetrieved[coinGeckoId]) {
         const liveData = cryptoRetrieved[coinGeckoId];
+        
+        // get crypto info for name and logo
+        const cache = getCryptoInfoCache();
+        const cryptoInfo = cache[ticker] || CRYPTO_MAP[ticker];
+        
         // store price data with ticker as key
         const priceData = {
           currentPrice: liveData.usd || 0,
           priceChange24h: liveData.usd_24h_change || 0,
+          name: cryptoInfo?.name || ticker,
+          logo: cryptoInfo?.logo || getCryptoLogo(ticker),
         };
         priceMap[ticker] = priceData;
 
@@ -487,11 +663,7 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
         );
       } else {
         // if API didn't return data for a specific ticker, try cache for it
-        const cachedPrice = getAnyCachedPrice(
-          ticker,
-          CACHE_KEY_CRYPTO,
-          "not in api response"
-        );
+        const cachedPrice = getAnyCachedPrice(ticker, CACHE_KEY_CRYPTO);
         if (cachedPrice) {
           priceMap[ticker] = cachedPrice;
         }
@@ -504,11 +676,7 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
 
     // try to get from cache (even expired) for uncached tickers
     uncachedTickers.forEach((ticker) => {
-      const cachedPrice = getAnyCachedPrice(
-        ticker,
-        CACHE_KEY_CRYPTO,
-        "fetch error"
-      );
+      const cachedPrice = getAnyCachedPrice(ticker, CACHE_KEY_CRYPTO);
       if (cachedPrice) {
         priceMap[ticker] = cachedPrice;
       }

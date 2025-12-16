@@ -2,8 +2,9 @@
 // it's a modal (popup window) that appears when you click "add transaction"
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { XIcon, CheckIcon, SpinnerGap } from "@phosphor-icons/react";
-import { getStockLogo, fetchStockPrices, fetchCryptoPrices } from "../services/api";
+import { getStockLogo, fetchStockPrices, fetchCryptoPrices, getCryptoInfo } from "../services/api";
 
 // list of popular assets for autocomplete (search suggestions)
 // when you type a ticker, it shows matching assets from this list
@@ -128,7 +129,7 @@ export default function TransactionFormModal({
     type: "Buy",
     ticker: "",
     name: "",
-    assetType: "stock",
+    assetType: "stock", // pre-select stock
     quantity: "",
     price: "",
     date: new Date().toISOString().split("T")[0],
@@ -137,7 +138,9 @@ export default function TransactionFormModal({
   // autocomplete state
   const [searchResults, setSearchResults] = useState([]); // matching assets when typing
   const [showDropdown, setShowDropdown] = useState(false); // show/hide autocomplete dropdown
+  const [showPopularDropdown, setShowPopularDropdown] = useState(false); // show/hide popular dropdown
   const [isFetchingPrice, setIsFetchingPrice] = useState(false); // loading state for price autofill
+  const [isFetchingCryptoInfo, setIsFetchingCryptoInfo] = useState(false); // loading state for crypto info
 
   // when modal opens, pre-fill form if editing
   useEffect(() => {
@@ -157,6 +160,9 @@ export default function TransactionFormModal({
           assetTypeValue = assetTypeValue.toLowerCase();
         }
 
+        const isNewTransaction = initialData.isNew && !initialData.id;
+        const hasPrice = initialData.price != null && initialData.price !== "";
+
         setFormData({
           type: initialData.type || "Buy",
           ticker: tickerValue,
@@ -165,18 +171,29 @@ export default function TransactionFormModal({
           logo: initialData.logo || (match ? match.logo : undefined),
           // ensure quantity and price are strings for form input handling
           quantity: initialData.quantity != null ? String(initialData.quantity) : "",
-          price: initialData.price != null ? String(initialData.price) : "",
+          // Format price to 2 decimals for display when editing
+          price: initialData.price != null ? (() => {
+            const num = parseFloat(initialData.price);
+            return isNaN(num) ? String(initialData.price) : num.toFixed(2);
+          })() : "",
           date: initialData.date
             ? new Date(initialData.date).toISOString().split("T")[0]
             : new Date().toISOString().split("T")[0],
         });
+
+        // auto-fetch price if it's a new transaction with ticker but no price
+        // never fetch price in edit mode to preserve the saved transaction price
+        if (isNewTransaction && tickerValue && !hasPrice && !isEditMode) {
+          const assetTypeForFetch = assetTypeValue === "crypto" ? "Crypto" : "Stock";
+          fetchCurrentPrice(tickerValue, assetTypeForFetch, false);
+        }
       } else {
         // if adding new, reset form to defaults
         setFormData({
           type: "Buy",
           ticker: "",
           name: "",
-          assetType: "stock",
+          assetType: "stock", // pre-select stock
           quantity: "",
           price: "",
           date: new Date().toISOString().split("T")[0],
@@ -184,12 +201,19 @@ export default function TransactionFormModal({
       }
       setSearchResults([]);
       setShowDropdown(false);
+      setShowPopularDropdown(false);
       setErrors({}); // clear any previous errors
     }
-  }, [isOpen, initialData]);
+  }, [isOpen, initialData, isEditMode]);
 
   // fetch current market price for a given ticker and asset type
-  const fetchCurrentPrice = async (ticker, assetType) => {
+  // only updates price if user hasn't already entered one
+  const fetchCurrentPrice = async (ticker, assetType, forceUpdate = false) => {
+    // don't overwrite if user has already entered a price (unless forced)
+    if (!forceUpdate && formData.price && formData.price.trim() !== "") {
+      return;
+    }
+    
     setIsFetchingPrice(true);
     try {
       let priceData = null;
@@ -202,10 +226,22 @@ export default function TransactionFormModal({
       }
       
       if (priceData && priceData.currentPrice > 0) {
-        setFormData((prev) => ({
-          ...prev,
-          price: priceData.currentPrice.toString(),
-        }));
+        // preserve full precision from API - don't round crypto prices
+        // This prevents price changes after transaction is added
+        // Store the full precision value, but display with 2 decimals
+        const priceValue = priceData.currentPrice;
+        // Store full precision value as string
+        const priceString = priceValue.toString();
+        setFormData((prev) => {
+          // only update if no price was entered or if forced
+          if (forceUpdate || !prev.price || prev.price.trim() === "") {
+            return {
+              ...prev,
+              price: priceString,
+            };
+          }
+          return prev;
+        });
       }
     } catch (error) {
       console.warn("failed to fetch current price:", error);
@@ -216,18 +252,29 @@ export default function TransactionFormModal({
 
   // when user selects an asset from autocomplete dropdown
   const selectAsset = (asset) => {
+    // check if ticker is changing - if so, clear price to fetch new one
+    const tickerChanged = formData.ticker !== asset.ticker;
+    
     setFormData((prev) => ({
       ...prev,
       ticker: asset.ticker,
       name: asset.name,
       assetType: asset.type.toLowerCase(), // "stock" or "crypto"
       logo: asset.type === "Stock" ? getStockLogo(asset.ticker) : asset.logo,
+      // clear price if ticker changed, otherwise preserve if user entered one
+      price: tickerChanged ? "" : (prev.price && prev.price.trim() !== "" ? prev.price : ""),
     }));
     setShowDropdown(false);
+    setShowPopularDropdown(false);
     setSearchResults([]);
     
-    // autofill price with current market price
-    fetchCurrentPrice(asset.ticker, asset.type);
+    // always fetch price when ticker changes (force update), or if no price is currently set
+    if (tickerChanged) {
+      // force update when ticker changes to ensure price is fetched even if old price exists
+      fetchCurrentPrice(asset.ticker, asset.type, true);
+    } else if (!formData.price || formData.price.trim() === "") {
+      fetchCurrentPrice(asset.ticker, asset.type, false);
+    }
   };
 
   // clear selected asset to allow searching again
@@ -240,6 +287,111 @@ export default function TransactionFormModal({
     }));
     setSearchResults([]);
     setShowDropdown(false);
+    setShowPopularDropdown(false);
+  };
+
+  // handle autofill and price fetching when user finishes entering ticker
+  const handleTickerAutofill = async (tickerValue) => {
+    if (!tickerValue || tickerValue.trim().length === 0 || isEditMode) {
+      return;
+    }
+
+    const upperValue = tickerValue.toUpperCase().trim();
+    
+    // check if ticker is changing - if so, clear price to fetch new one
+    const tickerChanged = formData.ticker !== upperValue;
+    // only preserve price if ticker hasn't changed AND user has entered one
+    const hasExistingPrice = !tickerChanged && formData.price && formData.price.trim() !== "";
+    const existingPrice = hasExistingPrice ? formData.price : "";
+    
+    // try to find matching asset in our list
+    const match = SEARCH_ASSETS.find((a) => a.ticker === upperValue);
+
+    if (match) {
+      // exact match found - autofill name, asset type, logo, and fetch price
+      setFormData((prev) => ({
+        ...prev,
+        ticker: upperValue,
+        name: match.name,
+        assetType: match.type.toLowerCase(),
+        logo: match.type === "Stock" ? getStockLogo(match.ticker) : match.logo,
+        price: existingPrice, // preserve existing price only if ticker didn't change
+      }));
+      // fetch price if ticker changed or if no price is currently set
+      if (tickerChanged || !hasExistingPrice) {
+        fetchCurrentPrice(match.ticker, match.type, false);
+      }
+      } else {
+        // no exact match - try to fetch based on current asset type
+        const currentAssetType = formData.assetType || "stock";
+        
+        if (currentAssetType === "crypto" || currentAssetType === "Crypto") {
+          // fetch crypto info (name, logo) and price for cryptocurrencies
+          setIsFetchingCryptoInfo(true);
+          try {
+            const cryptoInfo = await getCryptoInfo(upperValue);
+            if (cryptoInfo && cryptoInfo.id) {
+              // update form with crypto name, logo, and ensure assetType is set
+              setFormData((prev) => ({
+                ...prev,
+                ticker: upperValue,
+                name: cryptoInfo.name || upperValue,
+                logo: cryptoInfo.logo, // preserve logo from API
+                assetType: "crypto", // ensure assetType is set to crypto
+                price: existingPrice, // preserve existing price only if ticker didn't change
+              }));
+            } else {
+              // if no crypto info found, just update ticker but keep assetType as crypto
+              setFormData((prev) => ({
+                ...prev,
+                ticker: upperValue,
+                assetType: "crypto", // ensure assetType is set to crypto
+                price: existingPrice, // preserve existing price only if ticker didn't change
+              }));
+            }
+            // fetch price if ticker changed or if no price is currently set
+            if (tickerChanged || !hasExistingPrice) {
+              fetchCurrentPrice(upperValue, "Crypto", false);
+            }
+          } catch (error) {
+            console.warn("failed to fetch crypto info:", error);
+            // still try to fetch price even if info fetch fails, but keep assetType as crypto
+            setFormData((prev) => ({
+              ...prev,
+              ticker: upperValue,
+              assetType: "crypto", // ensure assetType is set to crypto
+              price: existingPrice, // preserve existing price only if ticker didn't change
+            }));
+            // fetch price if ticker changed or if no price is currently set
+            if (tickerChanged || !hasExistingPrice) {
+              fetchCurrentPrice(upperValue, "Crypto", false);
+            }
+          } finally {
+            setIsFetchingCryptoInfo(false);
+          }
+        } else {
+          // for stocks, just update ticker and try to fetch price
+          setFormData((prev) => ({
+            ...prev,
+            ticker: upperValue,
+            assetType: "stock", // ensure assetType is set to stock
+            price: existingPrice, // preserve existing price only if ticker didn't change
+          }));
+          // fetch price if ticker changed or if no price is currently set
+          if (tickerChanged || !hasExistingPrice) {
+            fetchCurrentPrice(upperValue, "Stock", false);
+          }
+        }
+      }
+  };
+
+  // get popular assets based on asset type
+  const getPopularAssets = () => {
+    const assetType = formData.assetType || "stock"; // default to stock if not selected
+    const filtered = SEARCH_ASSETS.filter(
+      (a) => a.type.toLowerCase() === assetType.toLowerCase()
+    );
+    return filtered.slice(0, 6); // return up to 6 items
   };
 
   // handle input changes in the form
@@ -255,52 +407,116 @@ export default function TransactionFormModal({
       });
     }
 
-    // special handling for ticker field - show autocomplete
+    // special handling for price field - store raw value, format on blur
+    if (name === "price") {
+      // Store the raw value as user types
+      setFormData((prev) => ({ ...prev, [name]: value }));
+      return;
+    }
+
+    // special handling for ticker field - show autocomplete only
     if (name === "ticker") {
       const upperValue = value.toUpperCase(); // convert to uppercase
 
-      // try to find matching asset in our list
-      const match = SEARCH_ASSETS.find((a) => a.ticker === upperValue);
-
+      // only update the ticker value, don't autofill or fetch price yet
       setFormData((prev) => ({
         ...prev,
         [name]: upperValue,
-        name: match ? match.name : prev.name, // auto-fill name if found
-        assetType: match ? match.type.toLowerCase() : prev.assetType,
-        logo: match
-          ? match.type === "Stock"
-            ? getStockLogo(match.ticker)
-            : match.logo
-          : undefined,
       }));
-
-      // if exact match found, fetch current market price
-      if (match && !isEditMode) {
-        fetchCurrentPrice(match.ticker, match.type);
-      } else if (!match && upperValue.length > 0 && !isEditMode) {
-        // if no match but ticker is entered, try to fetch price based on current assetType
-        // this helps when user manually types a ticker and selects asset type
-        const currentAssetType = formData.assetType || "stock";
-        if (currentAssetType === "crypto" || currentAssetType === "Crypto") {
-          fetchCurrentPrice(upperValue, "Crypto");
-        }
-      }
 
       // show autocomplete dropdown if typing and not in edit mode
       if (upperValue.length > 0 && !isEditMode) {
+        const currentAssetType = formData.assetType || "stock";
         const matches = SEARCH_ASSETS.filter(
           (a) =>
-            a.ticker.startsWith(upperValue) ||
-            a.name.toLowerCase().includes(upperValue.toLowerCase())
+            (a.ticker.startsWith(upperValue) ||
+            a.name.toLowerCase().includes(upperValue.toLowerCase())) &&
+            a.type.toLowerCase() === currentAssetType.toLowerCase()
         );
         setSearchResults(matches);
         setShowDropdown(true);
+        setShowPopularDropdown(false); // hide popular dropdown when typing
       } else {
         setShowDropdown(false);
+      }
+    } else if (name === "assetType") {
+      // when asset type changes, clear ticker and related fields to prevent mismatched asset types
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+        ticker: "", // clear ticker when asset type changes
+        name: "", // clear name
+        logo: undefined, // clear logo
+      }));
+      // clear search results and refresh dropdowns with new asset type
+      setSearchResults([]);
+      setShowDropdown(false);
+      if (showPopularDropdown) {
+        // refresh popular dropdown with new asset type
+        setShowPopularDropdown(true);
       }
     } else {
       // for other fields, just update the value
       setFormData((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  // handle blur event on price field - preserve full precision, only format for display
+  const handlePriceBlur = (e) => {
+    const priceValue = e.target.value;
+    if (priceValue && priceValue.trim() !== "") {
+      const num = parseFloat(priceValue);
+      if (!isNaN(num) && num >= 0) {
+        // Store the raw value to preserve full precision (important for crypto prices)
+        // Don't format here - we'll format only for display purposes
+        setFormData((prev) => ({ ...prev, price: priceValue.trim() }));
+      }
+    }
+  };
+
+  // format price for display (always 2 decimal places)
+  const getDisplayPrice = () => {
+    if (!formData.price || formData.price === "") return "";
+    const num = parseFloat(formData.price);
+    if (isNaN(num)) return formData.price;
+    return num.toFixed(2);
+  };
+
+  // handle blur event on ticker field - autofill and fetch price
+  const handleTickerBlur = (e) => {
+    const tickerValue = e.target.value;
+    // delay closing dropdowns to allow clicking on items
+    setTimeout(() => {
+      setShowDropdown(false);
+      setShowPopularDropdown(false);
+    }, 200);
+    if (tickerValue && tickerValue.trim().length > 0) {
+      handleTickerAutofill(tickerValue);
+    }
+  };
+
+  // handle focus event on ticker field - show popular dropdown
+  const handleTickerFocus = () => {
+    if (!isEditMode && !formData.ticker) {
+      // show popular dropdown when focusing on empty ticker field
+      setShowPopularDropdown(true);
+      setShowDropdown(false);
+    } else if (!isEditMode && formData.ticker.length > 0) {
+      // show search results if there's text
+      setShowDropdown(true);
+      setShowPopularDropdown(false);
+    }
+  };
+
+  // handle keydown event on ticker field - autofill and fetch price on Enter
+  const handleTickerKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const tickerValue = e.target.value;
+      if (tickerValue && tickerValue.trim().length > 0) {
+        setShowDropdown(false); // close dropdown
+        handleTickerAutofill(tickerValue);
+      }
     }
   };
 
@@ -312,20 +528,33 @@ export default function TransactionFormModal({
   const validateForm = () => {
     const newErrors = {};
 
-    // ticker must be provided and not too long
-    if (!formData.ticker || formData.ticker.trim().length === 0) {
-      newErrors.ticker = "Ticker symbol is required";
-    } else if (formData.ticker.length > 10) {
-      newErrors.ticker = "Ticker symbol is too long";
+    // asset type must be selected (only in add mode, not edit mode)
+    if (!isEditMode && (!formData.assetType || formData.assetType.trim().length === 0)) {
+      newErrors.assetType = "Asset type is required";
     }
 
-    // quantity must be a positive number
+    // ticker must be provided and not too long (only in add mode, not edit mode)
+    if (!isEditMode) {
+      if (!formData.ticker || formData.ticker.trim().length === 0) {
+        newErrors.ticker = "Ticker symbol is required";
+      } else if (formData.ticker.length > 10) {
+        newErrors.ticker = "Ticker symbol is too long";
+      }
+    }
+
+    // quantity must be a positive number (allows up to 10 decimal places)
     const quantityStr = String(formData.quantity || "").trim();
     const quantity = Number(formData.quantity);
     if (!quantityStr || quantityStr.length === 0) {
       newErrors.quantity = "Quantity is required";
     } else if (isNaN(quantity) || quantity <= 0) {
       newErrors.quantity = "Quantity must be a positive number";
+    } else {
+      // check decimal places (allow up to 10)
+      const decimalPart = quantityStr.includes('.') ? quantityStr.split('.')[1] : '';
+      if (decimalPart && decimalPart.length > 10) {
+        newErrors.quantity = "Quantity can have up to 10 decimal places";
+      }
     }
 
     // validate sell transactions - check if user owns enough shares
@@ -337,13 +566,19 @@ export default function TransactionFormModal({
       }
     }
 
-    // price must be a non-negative number (allows $0 for airdrops/gifts)
+    // price must be a non-negative number (allows $0 for airdrops/gifts, up to 10 decimal places)
     const priceStr = String(formData.price || "").trim();
     const price = Number(formData.price);
     if (!priceStr || priceStr.length === 0) {
       newErrors.price = "Price is required";
     } else if (isNaN(price) || price < 0) {
       newErrors.price = "Price must be a non-negative number";
+    } else {
+      // check decimal places (allow up to 10)
+      const decimalPart = priceStr.includes('.') ? priceStr.split('.')[1] : '';
+      if (decimalPart && decimalPart.length > 10) {
+        newErrors.price = "Price can have up to 10 decimal places";
+      }
     }
 
     // date must be provided and not in the future
@@ -379,15 +614,21 @@ export default function TransactionFormModal({
     finalType = finalType === "crypto" ? "Crypto" : "Stock";
 
     setIsSubmitting(true);
+    let submitData = null;
     try {
       // call the onSubmit function passed from parent component
       // include id if editing
-      const submitData = {
+      // preserve price as string first to maintain precision, then convert to number
+      // use parseFloat instead of Number to preserve decimal precision for crypto
+      const priceValue = parseFloat(formData.price);
+      const quantityValue = parseFloat(formData.quantity);
+      
+      submitData = {
         ...formData,
         name: finalName,
         assetType: finalType,
-        quantity: Number(formData.quantity),
-        price: Number(formData.price),
+        quantity: quantityValue,
+        price: priceValue, // use parseFloat to preserve decimal precision
       };
 
       // if editing, include the id (check both isEditMode prop and initialData.id)
@@ -407,7 +648,7 @@ export default function TransactionFormModal({
         type: "Buy",
         ticker: "",
         name: "",
-        assetType: "stock",
+        assetType: "stock", // pre-select stock
         quantity: "",
         price: "",
         date: new Date().toISOString().split("T")[0],
@@ -415,6 +656,9 @@ export default function TransactionFormModal({
       onClose(); // close modal
     } catch (error) {
       console.error("submission failed", error);
+      console.error("submission data:", submitData);
+      console.error("form data:", formData);
+      console.error("final type:", finalType);
       setErrors({ submit: error.message || "Failed to save transaction" });
       // keep modal open if error
     } finally {
@@ -425,9 +669,12 @@ export default function TransactionFormModal({
   // don't render if modal is closed
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl w-full max-w-md shadow-2xl overflow-hidden animate-slide-up">
+  const modalContent = (
+    <div 
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      style={{ height: '100vh', width: '100vw', minHeight: '100vh' }}
+    >
+      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl w-full max-w-md shadow-2xl overflow-hidden">
         {/* modal header */}
         <div className="p-4 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--bg-card)]">
           <h2 className="text-lg font-bold text-[var(--text-primary)]">
@@ -486,20 +733,93 @@ export default function TransactionFormModal({
                 );
               })()}
             </div>
-            {/* show message when sell is disabled */}
-            {!isEditMode && formData.ticker && !portfolioData.find(a => a.ticker === formData.ticker && a.quantity > 0) && (
-              <p className="text-xs text-[var(--text-secondary)] text-center">
-                You don't own any of this asset
-              </p>
-            )}
           </div>
 
-          {/* ticker input with autocomplete */}
-          <div className="space-y-4">
-            <div className="space-y-1 relative">
+          {/* asset type selector - hidden in edit mode */}
+          {!isEditMode && (
+            <div className="space-y-1">
               <label className="text-xs font-semibold text-[var(--text-secondary)]">
-                Ticker Symbol
+                Asset Type
               </label>
+              <div className={`flex gap-2 p-1 bg-[var(--bg-app)] rounded-lg border ${
+                errors.assetType
+                  ? "border-red-500"
+                  : "border-[var(--border-subtle)]"
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // clear ticker and related fields when asset type changes
+                    setFormData((prev) => ({
+                      ...prev,
+                      assetType: "stock",
+                      ticker: "", // clear ticker when asset type changes
+                      name: "", // clear name
+                      logo: undefined, // clear logo
+                    }));
+                    // clear search results and dropdowns
+                    setSearchResults([]);
+                    setShowDropdown(false);
+                    if (errors.assetType) {
+                      setErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.assetType;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
+                    formData.assetType === "stock"
+                      ? "bg-[var(--accent-blue)] text-white shadow-lg"
+                      : "text-[var(--text-secondary)] hover:text-white"
+                  }`}
+                >
+                  Stock
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // clear ticker and related fields when asset type changes
+                    setFormData((prev) => ({
+                      ...prev,
+                      assetType: "crypto",
+                      ticker: "", // clear ticker when asset type changes
+                      name: "", // clear name
+                      logo: undefined, // clear logo
+                    }));
+                    // clear search results and dropdowns
+                    setSearchResults([]);
+                    setShowDropdown(false);
+                    if (errors.assetType) {
+                      setErrors((prev) => {
+                        const newErrors = { ...prev };
+                        delete newErrors.assetType;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
+                    formData.assetType === "crypto"
+                      ? "bg-[var(--accent-blue)] text-white shadow-lg"
+                      : "text-[var(--text-secondary)] hover:text-white"
+                  }`}
+                >
+                  Crypto
+                </button>
+              </div>
+              {errors.assetType && (
+                <p className="text-xs text-red-500 mt-1">{errors.assetType}</p>
+              )}
+            </div>
+          )}
+
+          {/* ticker input with autocomplete - hidden in edit mode */}
+          {!isEditMode && (
+            <div className="space-y-4">
+              <div className="space-y-1 relative">
+                <label className="text-xs font-semibold text-[var(--text-secondary)]">
+                  Ticker Symbol
+                </label>
               <div className="flex items-center gap-2">
                 {/* show selected asset or input field */}
                 {formData.name && !isEditMode ? (
@@ -541,13 +861,16 @@ export default function TransactionFormModal({
                       typeof formData.ticker === "string" ? formData.ticker : ""
                     }
                     onChange={handleChange}
-                    onFocus={() => {
-                      if (formData.ticker && !isEditMode) setShowDropdown(true);
-                    }}
-                    onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-                    placeholder="e.g. BTC, AAPL"
+                    onKeyDown={handleTickerKeyDown}
+                    onFocus={handleTickerFocus}
+                    onBlur={handleTickerBlur}
+                    placeholder={
+                      formData.assetType === "crypto"
+                        ? "e.g. BTC, ETH"
+                        : "e.g. AAPL, MSFT"
+                    }
                     autoComplete="off"
-                    className={`flex-1 bg-[var(--bg-app)] border rounded-lg px-4 py-3 text-base font-bold text-[var(--text-primary)] focus:outline-none transition-colors disabled:opacity-50 ${
+                    className={`flex-1 bg-[var(--bg-app)] border rounded-lg px-4 py-3 text-base text-[var(--text-primary)] focus:outline-none transition-colors disabled:opacity-50 ${
                       errors.ticker
                         ? "border-red-500 focus:border-red-500"
                         : "border-[var(--border-subtle)] focus:border-[var(--text-secondary)]"
@@ -558,6 +881,54 @@ export default function TransactionFormModal({
               </div>
               {errors.ticker && (
                 <p className="text-xs text-red-500 mt-1">{errors.ticker}</p>
+              )}
+              
+              {/* show message when user doesn't own asset (only for sell transactions) */}
+              {!isEditMode && formData.type === "Sell" && formData.ticker && !portfolioData.find(a => a.ticker === formData.ticker && a.quantity > 0) && (
+                <p className="text-xs text-red-500 mt-1">
+                  You don't own any of this asset
+                </p>
+              )}
+
+              {/* popular dropdown - shown when focusing on empty ticker field */}
+              {showPopularDropdown && !formData.ticker && !isEditMode && (
+                <ul className="absolute z-50 left-0 right-0 top-full mt-1 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                  <li className="px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] border-b border-[var(--border-subtle)] bg-[var(--bg-app)] sticky top-0">
+                    Popular
+                  </li>
+                  {getPopularAssets().map((asset) => (
+                    <li
+                      key={asset.ticker}
+                      onClick={() => selectAsset(asset)}
+                      className="px-4 py-3 hover:bg-[var(--bg-card-hover)] cursor-pointer flex justify-between items-center group border-b border-[var(--border-subtle)] last:border-0"
+                    >
+                      <div className="flex items-center gap-3">
+                        {(asset.logo || asset.type === "Stock") && (
+                          <img
+                            src={
+                              asset.type === "Stock"
+                                ? getStockLogo(asset.ticker)
+                                : asset.logo
+                            }
+                            alt=""
+                            className="w-6 h-6 rounded-full"
+                          />
+                        )}
+                        <div>
+                          <span className="font-bold text-white text-sm block">
+                            {asset.ticker}
+                          </span>
+                          <span className="text-xs text-[var(--text-secondary)] group-hover:text-white transition-colors">
+                            {asset.name}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-xs bg-[var(--bg-app)] px-2 py-0.5 rounded text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+                        {asset.type}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
 
               {/* autocomplete dropdown */}
@@ -598,52 +969,9 @@ export default function TransactionFormModal({
                 </ul>
               )}
 
-              {/* asset type selector - show when ticker is entered but not matched */}
-              {formData.ticker && !formData.name && !isEditMode && (
-                <div className="mt-2 space-y-1">
-                  <label className="text-xs font-semibold text-[var(--text-secondary)]">
-                    Asset Type
-                  </label>
-                  <div className="flex gap-2 p-1 bg-[var(--bg-app)] rounded-lg border border-[var(--border-subtle)]">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormData((prev) => ({ ...prev, assetType: "stock" }));
-                        // try to fetch price when asset type changes
-                        if (formData.ticker) {
-                          fetchCurrentPrice(formData.ticker, "Stock");
-                        }
-                      }}
-                      className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
-                        formData.assetType === "stock"
-                          ? "bg-[var(--accent-blue)] text-white shadow-lg"
-                          : "text-[var(--text-secondary)] hover:text-white"
-                      }`}
-                    >
-                      Stock
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormData((prev) => ({ ...prev, assetType: "crypto" }));
-                        // try to fetch price when asset type changes
-                        if (formData.ticker) {
-                          fetchCurrentPrice(formData.ticker, "Crypto");
-                        }
-                      }}
-                      className={`flex-1 py-1.5 px-3 rounded-md text-sm font-bold transition-all ${
-                        formData.assetType === "crypto"
-                          ? "bg-[var(--accent-blue)] text-white shadow-lg"
-                          : "text-[var(--text-secondary)] hover:text-white"
-                      }`}
-                    >
-                      Crypto
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
+          )}
 
           {/* quantity and price inputs */}
           <div className="grid grid-cols-2 gap-4">
@@ -654,7 +982,7 @@ export default function TransactionFormModal({
               <input
                 name="quantity"
                 type="number"
-                step="any"
+                step="0.0000000001"
                 min="0"
                 value={formData.quantity}
                 onChange={handleChange}
@@ -678,10 +1006,11 @@ export default function TransactionFormModal({
                 <input
                   name="price"
                   type="number"
-                  step="any"
+                  step="0.01"
                   min="0"
-                  value={formData.price}
+                  value={getDisplayPrice()}
                   onChange={handleChange}
+                  onBlur={handlePriceBlur}
                   placeholder={isFetchingPrice ? "Loading..." : "0.00"}
                   disabled={isSubmitting || isFetchingPrice}
                   className={`w-full bg-[var(--bg-app)] border rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none transition-colors disabled:opacity-50 ${
@@ -759,4 +1088,6 @@ export default function TransactionFormModal({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

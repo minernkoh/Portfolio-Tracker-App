@@ -1,5 +1,7 @@
 // this file handles all database operations with airtable
 
+import { normalizeAssetType, formatTransactionType } from "./utils";
+
 // get api credentials from environment variables (stored in .env file)
 const API_KEY = import.meta.env.VITE_AIRTABLE_API_KEY;
 const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID;
@@ -27,6 +29,46 @@ const FIELD_IDS = {
 const headers = {
   Authorization: `Bearer ${API_KEY}`,
   "Content-Type": "application/json",
+};
+
+// helper function to retry Airtable request without ASSET_CLASS field if permission error occurs
+const retryWithoutAssetClass = async (url, method, fields, price, transaction) => {
+  const fieldsWithoutAssetClass = { ...fields };
+  delete fieldsWithoutAssetClass[FIELD_IDS.ASSET_CLASS];
+  
+  const retryResponse = await fetch(url, {
+    method,
+    headers,
+    body: JSON.stringify({ 
+      fields: fieldsWithoutAssetClass,
+      typecast: true,
+    }),
+  });
+  
+  if (!retryResponse.ok) {
+    const retryErrorData = await retryResponse.json().catch(() => ({}));
+    const retryErrorMessage = retryErrorData.error?.message || `failed to ${method === "POST" ? "create" : "update"} record`;
+    throw new Error(retryErrorMessage);
+  }
+  
+  const retryData = await retryResponse.json();
+  const originalPrice = transaction.price;
+  const originalPriceNum = originalPrice != null ? parseFloat(originalPrice) : price;
+  
+  const finalTransaction = {
+    ...transaction,
+    id: retryData.id || transaction.id,
+    price: originalPriceNum,
+    assetType: transaction.assetType || transaction.assetClass || normalizeAssetType(retryData.fields?.["Asset Class"]),
+    totalCost: transaction.quantity !== undefined 
+      ? transaction.quantity * originalPriceNum 
+      : (transaction.totalCost || transaction.quantity * originalPriceNum),
+  };
+  
+  return {
+    ...finalTransaction,
+    _assetClassNotSet: true,
+  };
 };
 
 // fetch all transactions from airtable
@@ -65,25 +107,15 @@ export const fetchTransactions = async () => {
       const fields = record.fields;
 
       // extract values using field names (airtable returns field names, not ids)
-      const quantity = Number(fields.Quantity || 0);
-      const totalCost = Number(fields["Total Cost"] || 0);
-      const price = Number(fields.Price || 0);
-
-      // calculate price from total cost if price wasn't provided
-      const calculatedPrice =
-        price || (quantity > 0 ? totalCost / quantity : 0);
-
-      // handle asset class - remove newlines and normalize
-      let assetType = fields["Asset Class"] || "Stock";
-      if (typeof assetType === "string") {
-        assetType = assetType.trim().replace(/\n/g, ""); // remove newlines
-        // normalize to "Stock" or "Crypto"
-        if (assetType.toLowerCase() === "crypto") {
-          assetType = "Crypto";
-        } else {
-          assetType = "Stock";
-        }
-      }
+      // use parseFloat to preserve decimal precision, especially for crypto prices
+      const quantity = parseFloat(fields.Quantity || 0);
+      // For price, preserve the exact value from Airtable - it might be a string or number
+      const priceRaw = fields.Price;
+      const price = priceRaw != null ? parseFloat(priceRaw) : 0;
+      const totalCost = parseFloat(fields["Total Cost"] || 0);
+      
+      // handle asset class - normalize using utility function
+      const assetType = normalizeAssetType(fields["Asset Class"]);
 
       // return a clean transaction object
       return {
@@ -91,11 +123,11 @@ export const fetchTransactions = async () => {
         ticker: fields.Ticker || "",
         type: fields.Type || "Buy",
         quantity: quantity,
-        price: calculatedPrice,
+        price: price, // use the price from Airtable
         date: fields.Date || "",
         assetType: assetType,
         name: fields.Name || fields.Ticker || "",
-        totalCost: totalCost || quantity * calculatedPrice,
+        totalCost: totalCost || quantity * price,
       };
     });
   } catch (error) {
@@ -111,33 +143,18 @@ export const createTransaction = async (transaction) => {
   if (!API_KEY || !BASE_ID) return null;
 
   // calculate total cost from quantity * price
-  const quantity = Number(transaction.quantity);
-  const price = Number(transaction.price);
+  // preserve exact price value to avoid precision loss
+  // Keep original price as-is (might be string or number) to preserve full precision
+  const originalPrice = transaction.price; // Preserve original price value (string or number)
+  const quantity = parseFloat(transaction.quantity);
+  const price = parseFloat(originalPrice); // Convert to number only for Airtable
   const totalCost = quantity * price;
 
-  // ensure type is capitalized (buy/sell -> Buy/Sell)
-  const transactionType = transaction.type
-    ? transaction.type.charAt(0).toUpperCase() +
-      transaction.type.slice(1).toLowerCase()
-    : "Buy";
+  // format transaction type using utility
+  const transactionType = formatTransactionType(transaction.type);
 
-  // normalize asset class - must match exact values in Airtable select field
-  // Airtable select fields are case-sensitive and must match existing options
-  let assetClass = transaction.assetType || transaction.assetClass || "Stock";
-  if (typeof assetClass === "string") {
-    assetClass = assetClass.trim();
-    // normalize to match Airtable select options exactly
-    if (assetClass.toLowerCase() === "crypto") {
-      assetClass = "Crypto";
-    } else {
-      assetClass = "Stock"; // default to Stock
-    }
-  } else {
-    assetClass = "Stock"; // fallback
-  }
+  const assetClass = normalizeAssetType(transaction.assetType || transaction.assetClass || "Stock");
 
-  // prepare the data in the format airtable expects
-  // using field ids instead of field names for stability
   const fields = {
     [FIELD_IDS.TICKER]: transaction.ticker,
     [FIELD_IDS.NAME]: transaction.name || transaction.ticker,
@@ -148,36 +165,42 @@ export const createTransaction = async (transaction) => {
     [FIELD_IDS.DATE]: transaction.date,
   };
 
-  // ASSET_CLASS field - include if Airtable has "Stock" and "Crypto" as select options
-  if (assetClass && assetClass.trim() !== "") {
-    fields[FIELD_IDS.ASSET_CLASS] = assetClass;
+  if (assetClass === "Stock" || assetClass === "Crypto") {
+    fields[FIELD_IDS.ASSET_CLASS] = String(assetClass).trim();
   }
 
   try {
-    // make a post request to create a new record
     const response = await fetch(BASE_URL, {
       method: "POST",
       headers,
-      body: JSON.stringify({ fields }), // convert javascript object to json string
+      body: JSON.stringify({ fields, typecast: true }),
     });
 
-    // check if request was successful
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const errorMessage =
-        errorData.error?.message || "failed to create record";
-      console.error("Airtable create error details:", { errorData, fields });
+      const errorMessage = errorData.error?.message || "failed to create record";
+      
+      const isSelectFieldError = errorMessage.includes("Insufficient permissions to create new select option") || 
+          errorMessage.includes("invalid value for select") ||
+          errorMessage.includes("Invalid enum value") ||
+          (errorMessage.includes("Could not parse") && errorMessage.includes("Asset Class"));
+      
+      if (isSelectFieldError) {
+        return retryWithoutAssetClass(BASE_URL, "POST", fields, price, transaction);
+      }
+      
       throw new Error(errorMessage);
     }
 
-    // get the created record data
     const data = await response.json();
-
-    // return the transaction with the new id from airtable
+    const originalPriceNum = originalPrice != null ? parseFloat(originalPrice) : price;
+    
     return {
       ...transaction,
       id: data.id,
+      price: originalPriceNum,
       totalCost: totalCost,
+      assetType: transaction.assetType || transaction.assetClass || normalizeAssetType(data.fields?.["Asset Class"]),
     };
   } catch (error) {
     console.error("airtable create error:", error);
@@ -192,31 +215,16 @@ export const updateTransaction = async (id, transaction) => {
   if (!API_KEY || !BASE_ID) return null;
 
   // calculate values
-  const quantity = Number(transaction.quantity);
-  const price = Number(transaction.price);
+  // use parseFloat to preserve decimal precision, especially for crypto
+  const quantity = parseFloat(transaction.quantity);
+  const price = parseFloat(transaction.price);
   const totalCost = quantity * price;
 
-  // format transaction type
-  const transactionType = transaction.type
-    ? transaction.type.charAt(0).toUpperCase() +
-      transaction.type.slice(1).toLowerCase()
-    : "Buy";
+  // format transaction type using utility
+  const transactionType = formatTransactionType(transaction.type);
 
-  // normalize asset class - must match exact values in Airtable select field
-  let assetClass = transaction.assetType || transaction.assetClass || "Stock";
-  if (typeof assetClass === "string") {
-    assetClass = assetClass.trim();
-    if (assetClass.toLowerCase() === "crypto") {
-      assetClass = "Crypto";
-    } else {
-      assetClass = "Stock";
-    }
-  } else {
-    assetClass = "Stock";
-  }
+  const assetClass = normalizeAssetType(transaction.assetType || transaction.assetClass || "Stock");
 
-  // prepare the data to update
-  // using field ids instead of field names for stability
   const fields = {
     [FIELD_IDS.TICKER]: transaction.ticker,
     [FIELD_IDS.NAME]: transaction.name || transaction.ticker,
@@ -227,28 +235,39 @@ export const updateTransaction = async (id, transaction) => {
     [FIELD_IDS.DATE]: transaction.date,
   };
 
-  // ASSET_CLASS field - include if Airtable has "Stock" and "Crypto" as select options
-  if (assetClass && assetClass.trim() !== "") {
+  if (assetClass === "Stock" || assetClass === "Crypto") {
     fields[FIELD_IDS.ASSET_CLASS] = assetClass;
   }
 
   try {
-    // make a patch request to update the record
-    // patch is used for partial updates (changing some fields but not all)
     const response = await fetch(`${BASE_URL}/${id}`, {
       method: "PATCH",
       headers,
-      body: JSON.stringify({ fields }),
+      body: JSON.stringify({ fields, typecast: true }),
     });
 
-    // check if request was successful
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || "failed to update record");
+      const errorMessage = errorData.error?.message || "failed to update record";
+      
+      const isSelectFieldError = errorMessage.includes("Insufficient permissions to create new select option") || 
+          errorMessage.includes("invalid value for select") ||
+          errorMessage.includes("Invalid enum value") ||
+          (errorMessage.includes("Could not parse") && errorMessage.includes("Asset Class"));
+      
+      if (isSelectFieldError) {
+        return retryWithoutAssetClass(`${BASE_URL}/${id}`, "PATCH", fields, price, { ...transaction, id });
+      }
+      
+      throw new Error(errorMessage);
     }
 
-    // return the updated transaction
-    return { ...transaction, id, totalCost };
+    return { 
+      ...transaction, 
+      id, 
+      totalCost,
+      assetType: transaction.assetType || transaction.assetClass,
+    };
   } catch (error) {
     console.error("airtable update error:", error);
     throw error;

@@ -4,7 +4,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeftIcon, TrendUpIcon, TrendDownIcon } from '@phosphor-icons/react';
-import { formatCurrency, calculatePortfolioData, formatDateTime, truncateName } from '../services/utils';
+import { formatCurrency, formatQuantity, calculatePortfolioData, formatDateTime, truncateName, calculatePnLPercentage, format24hChange } from '../services/utils';
+import AssetLogo from './ui/AssetLogo';
 import Layout from './Layout';
 import TransactionFormModal from './TransactionFormModal';
 import AddTransactionButton from './ui/AddTransactionButton';
@@ -110,7 +111,7 @@ export default function AssetDetails() {
 
   // calculate profit/loss percentage
   const isProfitable = asset.pnl >= 0;
-  const pnlPercent = asset.totalCost > 0 ? ((asset.pnl / asset.totalCost) * 100).toFixed(2) : '0.00';
+  const pnlPercent = calculatePnLPercentage(asset.pnl, asset.totalCost);
 
   return (
     <Layout>
@@ -128,21 +129,10 @@ export default function AssetDetails() {
       
       {/* asset header card */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 mb-6">
-        <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
             {/* asset logo */}
-            {asset.logo && (
-              <img 
-                src={asset.logo} 
-                alt={asset.name} 
-                className="w-16 h-16 rounded-full bg-transparent object-cover"
-                onError={(e) => {
-                  // if logo fails, show fallback
-                  e.target.onerror = null;
-                  e.target.src = `https://ui-avatars.com/api/?name=${asset.ticker}&background=random`;
-                }}
-              />
-            )}
+            <AssetLogo logo={asset.logo} ticker={asset.ticker} name={asset.name} size={16} />
             <div>
               <h1 className="text-2xl font-bold text-white" title={asset.name}>{truncateName(asset.name, 50)}</h1>
               <p className="text-[var(--text-secondary)]">{asset.ticker} • {asset.assetType}</p>
@@ -152,10 +142,15 @@ export default function AssetDetails() {
           {/* current price and 24h change */}
           <div className="text-right">
             <div className="text-3xl font-bold text-white">{formatCurrency(asset.currentPrice)}</div>
-            <div className={`flex items-center gap-1 justify-end mt-1 ${asset.priceChange24h >= 0 ? 'text-green' : 'text-red'}`}>
-              {asset.priceChange24h >= 0 ? <TrendUpIcon size={16} /> : <TrendDownIcon size={16} />}
-              <span className="text-sm font-bold">{Math.abs(asset.priceChange24h).toFixed(2)}%</span>
-            </div>
+            {(() => {
+              const change24h = format24hChange(asset.priceChange24h);
+              return (
+                <div className={`flex items-center gap-1 justify-end mt-1 ${change24h.isPositive ? 'text-green' : 'text-red'}`}>
+                  {change24h.isPositive ? <TrendUpIcon size={16} /> : <TrendDownIcon size={16} />}
+                  <span className="text-sm font-bold">{change24h.formatted}%</span>
+                </div>
+              );
+            })()}
           </div>
         </div>
         
@@ -164,7 +159,7 @@ export default function AssetDetails() {
           {/* holdings (how many shares/coins you own) */}
           <div>
             <div className="text-xs text-[var(--text-secondary)] mb-1">Holdings</div>
-            <div className="text-lg font-bold text-white">{asset.quantity} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}</div>
+            <div className="text-lg font-bold text-white">{formatQuantity(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}</div>
           </div>
           
           {/* market value (current worth) */}
@@ -194,7 +189,9 @@ export default function AssetDetails() {
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl overflow-hidden">
         <div className="p-6 border-b border-[var(--border-subtle)]">
           <h2 className="text-lg font-bold text-white">Transaction History</h2>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">{asset.transactions?.length || 0} transactions</p>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            {asset.transactions?.length || 0} {asset.transactions?.length === 1 ? 'transaction' : 'transactions'}
+          </p>
         </div>
         
         <div className="overflow-x-auto">
@@ -205,7 +202,7 @@ export default function AssetDetails() {
                 <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)]">Type</th>
                 <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Price</th>
                 <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Quantity</th>
-                <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Total</th>
+                <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Total Cost</th>
                 <th className="py-3 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Actions</th>
               </tr>
             </thead>
@@ -221,7 +218,7 @@ export default function AssetDetails() {
                     </td>
                     <td className="py-4 px-6 text-right text-sm font-medium">{formatCurrency(tx.price)}</td>
                     <td className="py-4 px-6 text-right text-sm text-[var(--text-secondary)]">
-                      {tx.quantity} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
+                      {formatQuantity(tx.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
                     </td>
                     <td className="py-4 px-6 text-right text-sm font-medium">{formatCurrency(tx.quantity * tx.price)}</td>
                     {/* edit button */}

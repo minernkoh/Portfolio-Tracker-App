@@ -4,7 +4,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { PlusIcon, DotsThreeIcon, TrashIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
-import { formatCurrency, truncateName } from '../services/utils';
+import { formatCurrency, formatQuantity, truncateName, calculatePnLPercentage, format24hChange } from '../services/utils';
+import AssetLogo from './ui/AssetLogo';
 
 export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddTransaction }) {
   // state for dropdown menu (the three dots menu)
@@ -75,8 +76,8 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
   });
 
   return (
-    <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
-      <div className="overflow-x-auto pb-32">
+    <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-subtle)] overflow-visible">
+      <div>
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-[var(--border-subtle)] cursor-pointer select-none">
@@ -121,22 +122,7 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                     to={`/asset/${asset.ticker}`}
                     className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
                   >
-                    {asset.logo ? (
-                        <img 
-                          src={asset.logo} 
-                          alt={asset.name} 
-                          className="w-8 h-8 rounded-full bg-transparent object-cover"
-                          onError={(e) => {
-                              // if logo fails to load, show fallback avatar
-                              e.target.onerror = null; 
-                              e.target.src = `https://ui-avatars.com/api/?name=${asset.ticker}&background=random`
-                          }} 
-                        />
-                    ) : (
-                        <div className="w-8 h-8 rounded-full bg-[var(--border-subtle)] flex items-center justify-center text-xs font-bold text-[var(--text-secondary)]">
-                          {asset.ticker[0]}
-                        </div>
-                    )}
+                    <AssetLogo logo={asset.logo} ticker={asset.ticker} name={asset.name} size={8} />
                     <div>
                       <div className="font-bold text-sm text-[var(--text-primary)]">
                         {asset.ticker} <span className="mx-1 text-[var(--text-secondary)]">|</span> <span className="text-[var(--text-secondary)] font-normal" title={asset.name}>{truncateName(asset.name, 25)}</span>
@@ -151,15 +137,20 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                 </td>
 
                 {/* 24 hour price change percentage */}
-                <td className={`py-4 px-6 text-right text-sm font-medium ${asset.priceChange24h >= 0 ? 'text-green' : 'text-red'}`}>
-                   {asset.priceChange24h >= 0 ? '▲' : '▼'} {Math.abs(asset.priceChange24h).toFixed(2)}%
-                </td>
+                {(() => {
+                  const change24h = format24hChange(asset.priceChange24h);
+                  return (
+                    <td className={`py-4 px-6 text-right text-sm font-medium ${change24h.isPositive ? 'text-green' : 'text-red'}`}>
+                      {change24h.display}
+                    </td>
+                  );
+                })()}
 
                 {/* total market value */}
                 <td className="py-4 px-6 text-right">
                   <div className="text-sm font-bold text-[var(--text-primary)]">{formatCurrency(asset.totalValue, hideValues)}</div>
                   <div className="text-xs text-[var(--text-secondary)]">
-                    {asset.quantity} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
+                    {formatQuantity(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
                   </div>
                 </td>
 
@@ -174,7 +165,10 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                      {asset.pnl > 0 ? '+' : ''}{formatCurrency(asset.pnl, hideValues)}
                    </div>
                    <div className={`text-xs ${asset.pnl >= 0 ? 'text-green' : 'text-red'}`}>
-                     {asset.pnl >= 0 ? '▲' : '▼'} {asset.totalValue > asset.pnl ? ((asset.pnl / (asset.totalValue - asset.pnl)) * 100).toFixed(2) : 0}%
+                     {asset.pnl >= 0 ? '▲' : '▼'} {(() => {
+                       const costBasis = asset.totalValue - asset.pnl;
+                       return calculatePnLPercentage(asset.pnl, costBasis);
+                     })()}%
                    </div>
                 </td>
                 
@@ -203,7 +197,7 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                     {openDropdownId === asset.id && (
                         <div 
                             ref={dropdownRef}
-                            className="absolute right-0 top-8 z-50 w-48 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl animate-fade-in"
+                            className="absolute right-0 top-8 z-50 w-48 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl animate-fade-in overflow-visible"
                         >
                             <div className="py-1">
                                 {/* view history link */}

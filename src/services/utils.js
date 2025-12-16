@@ -1,18 +1,72 @@
 // this file contains helper functions used throughout the app
 // these are utility functions that format numbers and calculate values
 
-// format a number as US dollars (money format) example: formatCurrency(1000) returns "$1,000.00"
+// format a number with up to 10 decimal places, showing only what's necessary
+// example: formatNumber(1.50000000) returns "1.5"
+export const formatNumber = (value, maxDecimals = 10) => {
+  if (value === null || value === undefined || isNaN(value)) return "0";
+  
+  const num = Number(value);
+  if (!isFinite(num)) return String(value);
+  
+  // Handle zero
+  if (num === 0) return "0";
+  
+  // Use toFixed to avoid scientific notation, then parse
+  // Use a higher precision to avoid rounding issues
+  const fixedStr = num.toFixed(Math.max(maxDecimals, 15));
+  
+  // Split into integer and decimal parts
+  const parts = fixedStr.split(".");
+  let integerPart = parts[0];
+  let decimalPart = parts[1] || "";
+  
+  // Limit decimal part to maxDecimals
+  if (decimalPart.length > maxDecimals) {
+    decimalPart = decimalPart.substring(0, maxDecimals);
+  }
+  
+  // Remove trailing zeros from decimal part
+  decimalPart = decimalPart.replace(/0+$/, "");
+  
+  // Format integer part with thousand separators
+  const formattedInteger = Number(integerPart).toLocaleString("en-US");
+  
+  // Return formatted number
+  if (decimalPart.length === 0) {
+    return formattedInteger;
+  }
+  
+  return `${formattedInteger}.${decimalPart}`;
+};
+
+// format a number as US dollars (money format) - always exactly 2 decimal places
+// example: formatCurrency(1000) returns "$1,000.00"
+// example: formatCurrency(0.001) returns "$0.00"
 export const formatCurrency = (value, hidden = false) => {
   // privacy feature, for hiding numbers
   if (hidden) return "****";
 
-  // use javascript's built-in number formatter for US dollars
+  if (value === null || value === undefined || isNaN(value)) return "$0.00";
+  
+  const num = Number(value);
+  if (!isFinite(num)) return "$0.00";
+  
+  // Use javascript's built-in number formatter for US dollars
+  // Always show exactly 2 decimal places
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 2, // always show 2 decimal places
     maximumFractionDigits: 2, // never show more than 2 decimal places
-  }).format(value);
+  }).format(num);
+};
+
+// format a quantity (for crypto or stocks) with dynamic decimal places
+// example: formatQuantity(1.5) returns "1.5"
+// example: formatQuantity(0.00012345) returns "0.00012345"
+export const formatQuantity = (value) => {
+  return formatNumber(value, 10);
 };
 
 // format a number as a percentage
@@ -79,6 +133,51 @@ export const getClassByValue = (value) => {
   return "text-[var(--text-secondary)]"; // gray for zero
 };
 
+// normalize asset type to "Stock" or "Crypto"
+// handles various input formats and normalizes to standard format
+export const normalizeAssetType = (assetType) => {
+  if (!assetType) return "Stock";
+  
+  if (typeof assetType === "string") {
+    const normalized = assetType.trim().replace(/\n/g, "").toLowerCase();
+    return normalized === "crypto" ? "Crypto" : "Stock";
+  }
+  
+  return "Stock";
+};
+
+// format transaction type to "Buy" or "Sell" with proper capitalization
+export const formatTransactionType = (type) => {
+  if (!type) return "Buy";
+  
+  return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
+};
+
+// calculate profit/loss percentage from PnL and cost basis
+// returns formatted percentage string (e.g., "5.25" for 5.25%)
+// returns "0.00" if cost basis is 0 or invalid
+export const calculatePnLPercentage = (pnl, costBasis) => {
+  if (!costBasis || costBasis <= 0 || isNaN(pnl) || isNaN(costBasis)) {
+    return "0.00";
+  }
+  return ((pnl / costBasis) * 100).toFixed(2);
+};
+
+// format 24h price change with arrow indicator
+// returns object with { value, formatted, isPositive, arrow }
+export const format24hChange = (changePercent) => {
+  const isPositive = changePercent >= 0;
+  const arrow = isPositive ? "▲" : "▼";
+  const formatted = Math.abs(changePercent).toFixed(2);
+  return {
+    value: changePercent,
+    formatted,
+    isPositive,
+    arrow,
+    display: `${arrow} ${formatted}%`,
+  };
+};
+
 // calculate portfolio data from transactions and prices
 // this combines buy/sell history with current prices to show portfolio value
 // uses FIFO (first in, first out) for sell calculations
@@ -102,10 +201,12 @@ export const calculatePortfolioData = (transactions, prices) => {
       assetMap[ticker] = {
         ticker: ticker,
         name: tx.name || ticker,
-        assetType: tx.assetType || "Stock",
+        assetType: normalizeAssetType(tx.assetType),
         transactions: [],
         totalQuantity: 0,
         totalCost: 0,
+        // track remaining available shares per buy transaction for FIFO
+        buyQueue: [], // array of {quantity, price, originalQuantity} for each buy
       };
     }
 
@@ -116,19 +217,25 @@ export const calculatePortfolioData = (transactions, prices) => {
     if (tx.type.toLowerCase() === "buy") {
       assetMap[ticker].totalQuantity += tx.quantity;
       assetMap[ticker].totalCost += tx.quantity * tx.price;
+      // add to FIFO queue
+      assetMap[ticker].buyQueue.push({
+        quantity: tx.quantity,
+        price: tx.price,
+        originalQuantity: tx.quantity,
+      });
     } else {
       // for sells, use FIFO - sell oldest shares first
       let remainingToSell = tx.quantity;
       let costOfSoldShares = 0;
 
-      // go through buy transactions in order
-      for (const buyTx of assetMap[ticker].transactions.filter(
-        (t) => t.type.toLowerCase() === "buy"
-      )) {
-        if (remainingToSell <= 0) break;
+      // go through buy queue in order (oldest first)
+      for (let i = 0; i < assetMap[ticker].buyQueue.length && remainingToSell > 0; i++) {
+        const buyEntry = assetMap[ticker].buyQueue[i];
+        if (buyEntry.quantity <= 0) continue; // skip already exhausted buys
 
-        const sharesFromThisBuy = Math.min(remainingToSell, buyTx.quantity);
-        costOfSoldShares += sharesFromThisBuy * buyTx.price;
+        const sharesFromThisBuy = Math.min(remainingToSell, buyEntry.quantity);
+        costOfSoldShares += sharesFromThisBuy * buyEntry.price;
+        buyEntry.quantity -= sharesFromThisBuy; // reduce available shares
         remainingToSell -= sharesFromThisBuy;
       }
 
@@ -149,8 +256,9 @@ export const calculatePortfolioData = (transactions, prices) => {
         name: null,
       };
 
-      // use company name from API if available, otherwise fall back to transaction name or ticker
-      const companyName = priceData.name || asset.name || asset.ticker;
+      // prioritize transaction name (from hardcoded list) over API name to avoid "Common Stock" suffix
+      // only use API name as fallback if transaction doesn't have a name
+      const companyName = asset.name || priceData.name || asset.ticker;
 
       // calculate average buy price (cost basis per share/coin)
       const avgPrice =

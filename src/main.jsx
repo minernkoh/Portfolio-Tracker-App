@@ -24,13 +24,16 @@ createRoot(document.getElementById('root')).render(
       <ErrorBoundary>
         <App />
         <Toaster 
-          position="top-right"
+          position="top-center"
           toastOptions={{
             duration: 4000,
             style: {
               background: '#121214',
               color: '#ededed',
               border: '1px solid rgba(39, 39, 42, 0.4)',
+              fontSize: '14px',
+              textAlign: 'center',
+              padding: '12px 16px',
             },
             success: {
               iconTheme: {

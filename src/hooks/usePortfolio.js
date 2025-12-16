@@ -8,6 +8,7 @@ import {
   deleteTransaction,
 } from "../services/airtable";
 import { fetchStockPrices, fetchCryptoPrices } from "../services/api";
+import { normalizeAssetType } from "../services/utils";
 
 // query keys - centralized for consistency
 // use sorted joined strings for stable keys with arrays
@@ -53,7 +54,7 @@ export function usePrices(transactions = []) {
     return [
       ...new Set(
         transactions
-          .filter((tx) => (tx.assetType || "").toLowerCase() !== "crypto")
+          .filter((tx) => normalizeAssetType(tx.assetType) !== "Crypto")
           .map((tx) => tx.ticker)
           .filter(Boolean)
       ),
@@ -64,7 +65,7 @@ export function usePrices(transactions = []) {
     return [
       ...new Set(
         transactions
-          .filter((tx) => (tx.assetType || "").toLowerCase() === "crypto")
+          .filter((tx) => normalizeAssetType(tx.assetType) === "Crypto")
           .map((tx) => tx.ticker)
           .filter(Boolean)
       ),
@@ -154,8 +155,26 @@ export function useAddTransaction() {
         `Failed to add transaction: ${err.message || "Unknown error"}`
       );
     },
-    onSuccess: () => {
-      toast.success("Transaction added successfully");
+    onSuccess: (data) => {
+      // Check if asset class wasn't set in Airtable (but was preserved in app state)
+      if (data?._assetClassNotSet) {
+        toast.success("Transaction added successfully", {
+          duration: 5000,
+        });
+        toast(
+          "Note: Asset class couldn't be set in Airtable due to API permissions, but it's preserved in the app.",
+          {
+            icon: "⚠️",
+            duration: 6000,
+            style: {
+              background: '#f59e0b',
+              color: '#fff',
+            },
+          }
+        );
+      } else {
+        toast.success("Transaction added successfully");
+      }
     },
     onSettled: () => {
       // refetch to get the real data

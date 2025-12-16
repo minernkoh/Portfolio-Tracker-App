@@ -16,9 +16,12 @@ import EditButton from "./ui/EditButton";
 import EmptyState from "./ui/EmptyState";
 import {
   formatCurrency,
+  formatQuantity,
   calculatePortfolioData,
   truncateName,
   formatDateTime,
+  calculatePnLPercentage,
+  format24hChange,
 } from "../services/utils";
 import {
   useTransactions,
@@ -308,23 +311,21 @@ export default function Dashboard() {
                     {formatCurrency(total24hChange, hideValues)}
                   </span>
                   {/* 24h percentage */}
-                  <span
-                    className={`text-sm font-bold ${
-                      is24hPositive ? "text-green" : "text-red"
-                    }`}
-                  >
-                    {is24hPositive ? "▲" : "▼"}
-                    {!hideValues
-                      ? totalValue > 0
-                        ? (
-                            (Math.abs(total24hChange) /
-                              (totalValue - total24hChange)) *
-                            100
-                          ).toFixed(2)
-                        : "0.00"
-                      : "***"}
-                    % (24h)
-                  </span>
+                  {(() => {
+                    const changePercent = !hideValues && totalValue > 0
+                      ? (Math.abs(total24hChange) / (totalValue - total24hChange)) * 100
+                      : 0;
+                    const change24h = format24hChange(changePercent);
+                    return (
+                      <span
+                        className={`text-sm font-bold ${
+                          change24h.isPositive ? "text-green" : "text-red"
+                        }`}
+                      >
+                        {!hideValues ? change24h.display : "***"} (24h)
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -363,9 +364,7 @@ export default function Dashboard() {
                 valueFormatted={`${isPositive ? "+" : ""}${formatCurrency(totalPnL, hideValues)}`}
                 subtitle={`${isPositive ? "▲" : "▼"} ${
                   !hideValues
-                    ? totalCostBasis > 0
-                      ? ((totalPnL / totalCostBasis) * 100).toFixed(2)
-                      : "0.00"
+                    ? calculatePnLPercentage(totalPnL, totalCostBasis)
                     : "**"
                 }%`}
                 isPositive={isPositive}
@@ -383,16 +382,11 @@ export default function Dashboard() {
               {bestPerformer ? (
                 <StatCard
                   label="Best performer"
-                  value={bestPerformer.name}
-                  valueFormatted={truncateName(bestPerformer.name, 20)}
+                  value={bestPerformer.ticker}
+                  valueFormatted={bestPerformer.ticker}
                   subtitle={`▲ +${
                     !hideValues
-                      ? bestPerformer.totalCost > 0
-                        ? (
-                            (bestPerformer.pnl / bestPerformer.totalCost) *
-                            100
-                          ).toFixed(2)
-                        : "0.00"
+                      ? calculatePnLPercentage(bestPerformer.pnl, bestPerformer.totalCost)
                       : "**"
                   }%`}
                   isPositive={true}
@@ -410,16 +404,11 @@ export default function Dashboard() {
               {worstPerformer ? (
                 <StatCard
                   label="Worst performer"
-                  value={worstPerformer.name}
-                  valueFormatted={truncateName(worstPerformer.name, 20)}
+                  value={worstPerformer.ticker}
+                  valueFormatted={worstPerformer.ticker}
                   subtitle={`${worstPerformer.pnl >= 0 ? "▲ +" : "▼"} ${
                     !hideValues
-                      ? worstPerformer.totalCost > 0
-                        ? (
-                            (worstPerformer.pnl / worstPerformer.totalCost) *
-                            100
-                          ).toFixed(2)
-                        : "0.00"
+                      ? calculatePnLPercentage(worstPerformer.pnl, worstPerformer.totalCost)
                       : "**"
                   }%`}
                   isPositive={worstPerformer.pnl >= 0}
@@ -516,7 +505,11 @@ export default function Dashboard() {
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)]">
                   {allTransactionsSorted.length === 0 ? (
-                    <EmptyState message="No transactions found." colSpan={7} />
+                    <tr>
+                      <td colSpan={7} className="text-center text-[var(--text-secondary)] align-middle" style={{ height: '400px' }}>
+                        No transactions found.
+                      </td>
+                    </tr>
                   ) : (
                     allTransactionsSorted.map((tx) => (
                       <tr
@@ -533,7 +526,7 @@ export default function Dashboard() {
                           {tx.ticker}
                         </td>
                         <td className="py-4 px-6 text-sm text-right text-white">
-                          {tx.quantity}
+                          {formatQuantity(tx.quantity)}
                         </td>
                         <td className="py-4 px-6 text-sm text-right text-[var(--text-secondary)]">
                           {formatCurrency(tx.price, hideValues)}

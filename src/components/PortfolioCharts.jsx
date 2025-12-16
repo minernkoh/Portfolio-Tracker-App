@@ -75,76 +75,111 @@ export default function PortfolioCharts({
       return dateA - dateB;
     });
 
-    // calculate portfolio value at each transaction date
+    // group transactions by date (same day)
+    const transactionsByDate = new Map();
+    sortedTransactions.forEach((tx) => {
+      const date = new Date(tx.date);
+      // normalize to start of day for grouping
+      const dateKey = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+      
+      if (!transactionsByDate.has(dateKey)) {
+        transactionsByDate.set(dateKey, []);
+      }
+      transactionsByDate.get(dateKey).push(tx);
+    });
+
+    // calculate portfolio value at each unique transaction date
     const dataPoints = [];
     const assetMap = {}; // track holdings over time
 
-    sortedTransactions.forEach((tx) => {
-      const ticker = tx.ticker;
+    // process transactions grouped by date
+    Array.from(transactionsByDate.entries())
+      .sort((a, b) => a[0] - b[0]) // sort by date key
+      .forEach(([dateKey, dateTransactions]) => {
+        // process all transactions for this date
+        dateTransactions.forEach((tx) => {
+          const ticker = tx.ticker;
 
-      // initialize asset if not seen before
-      if (!assetMap[ticker]) {
-        assetMap[ticker] = {
-          quantity: 0,
-          totalCost: 0,
-          transactions: [],
-        };
-      }
+          // initialize asset if not seen before
+          if (!assetMap[ticker]) {
+            assetMap[ticker] = {
+              quantity: 0,
+              totalCost: 0,
+              transactions: [],
+            };
+          }
 
-      // update holdings based on transaction
-      if (tx.type.toLowerCase() === "buy") {
-        assetMap[ticker].quantity += tx.quantity;
-        assetMap[ticker].totalCost += tx.quantity * tx.price;
-      } else {
-        // FIFO sell calculation
-        let remainingToSell = tx.quantity;
-        let costOfSoldShares = 0;
-        for (const buyTx of assetMap[ticker].transactions.filter(
-          (t) => t.type.toLowerCase() === "buy"
-        )) {
-          if (remainingToSell <= 0) break;
-          const sharesFromThisBuy = Math.min(remainingToSell, buyTx.quantity);
-          costOfSoldShares += sharesFromThisBuy * buyTx.price;
-          remainingToSell -= sharesFromThisBuy;
-        }
-        assetMap[ticker].quantity -= tx.quantity;
-        assetMap[ticker].totalCost -= costOfSoldShares;
-      }
+          // update holdings based on transaction
+          if (tx.type.toLowerCase() === "buy") {
+            assetMap[ticker].quantity += tx.quantity;
+            assetMap[ticker].totalCost += tx.quantity * tx.price;
+            // add to FIFO queue
+            if (!assetMap[ticker].buyQueue) {
+              assetMap[ticker].buyQueue = [];
+            }
+            assetMap[ticker].buyQueue.push({
+              quantity: tx.quantity,
+              price: tx.price,
+            });
+          } else {
+            // FIFO sell calculation - track remaining shares per buy
+            let remainingToSell = tx.quantity;
+            let costOfSoldShares = 0;
+            
+            if (!assetMap[ticker].buyQueue) {
+              assetMap[ticker].buyQueue = [];
+            }
+            
+            // go through buy queue in order (oldest first)
+            for (let i = 0; i < assetMap[ticker].buyQueue.length && remainingToSell > 0; i++) {
+              const buyEntry = assetMap[ticker].buyQueue[i];
+              if (buyEntry.quantity <= 0) continue; // skip already exhausted buys
+              
+              const sharesFromThisBuy = Math.min(remainingToSell, buyEntry.quantity);
+              costOfSoldShares += sharesFromThisBuy * buyEntry.price;
+              buyEntry.quantity -= sharesFromThisBuy; // reduce available shares
+              remainingToSell -= sharesFromThisBuy;
+            }
+            
+            assetMap[ticker].quantity -= tx.quantity;
+            assetMap[ticker].totalCost -= costOfSoldShares;
+          }
 
-      assetMap[ticker].transactions.push(tx);
+          assetMap[ticker].transactions.push(tx);
+        });
 
-      // calculate portfolio value at this point using current prices
-      let portfolioValue = 0;
-      let totalCostBasis = 0;
+        // calculate portfolio value once per date (after processing all transactions for that date)
+        let portfolioValue = 0;
+        let totalCostBasis = 0;
 
-      Object.keys(assetMap).forEach((assetTicker) => {
-        const asset = assetMap[assetTicker];
-        if (asset.quantity > 0) {
-          // use current price if available, otherwise use 0
-          const currentPrice = prices[assetTicker]?.currentPrice || 0;
-          portfolioValue += calculateValue(asset.quantity, currentPrice);
-          totalCostBasis += asset.totalCost;
-        }
+        Object.keys(assetMap).forEach((assetTicker) => {
+          const asset = assetMap[assetTicker];
+          if (asset.quantity > 0) {
+            // use current price if available, otherwise use 0
+            const currentPrice = prices[assetTicker]?.currentPrice || 0;
+            portfolioValue += calculateValue(asset.quantity, currentPrice);
+            totalCostBasis += asset.totalCost;
+          }
+        });
+
+        // format date for display
+        const date = new Date(dateKey);
+        const dateLabel = date.toLocaleDateString([], {
+          month: "short",
+          day: "numeric",
+          year:
+            date.getFullYear() !== new Date().getFullYear()
+              ? "numeric"
+              : undefined,
+        });
+
+        dataPoints.push({
+          date: dateLabel,
+          value: portfolioValue,
+          costBasis: totalCostBasis,
+          timestamp: dateKey,
+        });
       });
-
-      // format date for display
-      const date = new Date(tx.date);
-      const dateLabel = date.toLocaleDateString([], {
-        month: "short",
-        day: "numeric",
-        year:
-          date.getFullYear() !== new Date().getFullYear()
-            ? "numeric"
-            : undefined,
-      });
-
-      dataPoints.push({
-        date: dateLabel,
-        value: portfolioValue,
-        costBasis: totalCostBasis,
-        timestamp: date.getTime(),
-      });
-    });
 
     // add current point if we have transactions
     if (dataPoints.length > 0) {
@@ -246,9 +281,9 @@ export default function PortfolioCharts({
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* performance chart based on transaction history */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
           <div className="flex items-center gap-2">
             <h2 className="text-white font-bold text-sm">Performance</h2>
@@ -292,8 +327,8 @@ export default function PortfolioCharts({
 
         {/* area chart showing portfolio value over time */}
         {historyData.length > 0 ? (
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-[260px] w-full relative" style={{ minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height={260} minWidth={0} minHeight={0}>
               <AreaChart data={historyData}>
                 <defs>
                   <linearGradient
@@ -323,7 +358,8 @@ export default function PortfolioCharts({
                   tickLine={false}
                   axisLine={false}
                   dy={10}
-                  minTickGap={30}
+                  minTickGap={10}
+                  interval="preserveStartEnd"
                 />
                 <YAxis
                   stroke="#52525b"
@@ -356,7 +392,7 @@ export default function PortfolioCharts({
             </ResponsiveContainer>
           </div>
         ) : (
-          <div className="h-[300px] flex flex-col items-center justify-center">
+          <div className="flex-1 min-h-[260px] flex flex-col items-center justify-center">
             <div className="text-center">
               <div className="text-sm text-[var(--text-secondary)] mb-2">
                 No transaction history
@@ -370,99 +406,114 @@ export default function PortfolioCharts({
       </div>
 
       {/* allocation chart (pie chart showing asset distribution) */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col" style={{ overflow: 'visible' }}>
         <div className="mb-6">
           <h2 className="text-white font-bold text-sm">Allocation</h2>
-          <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
+          <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">
             Distribution by Asset Value
           </p>
         </div>
 
-        <div className="flex-1 flex flex-row items-center justify-between gap-2 min-h-[180px]">
+        <div className="flex-1 flex flex-col sm:flex-row items-center justify-between gap-2" style={{ overflow: 'visible' }}>
           {/* pie chart */}
-          <div className="relative w-[50%] h-[180px] overflow-visible">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <defs>
-                  {/* glow effect for pie slices */}
-                  <filter
-                    id="glow-pie"
-                    x="-50%"
-                    y="-50%"
-                    width="200%"
-                    height="200%"
+          {allocationData.length > 0 ? (
+            <div className="relative w-full sm:w-[70%] lg:w-[60%] h-[260px] overflow-visible" style={{ minWidth: 0 }}>
+              <ResponsiveContainer width="100%" height={260} minWidth={0} minHeight={0}>
+                <PieChart>
+                  <defs>
+                    {/* glow effect for pie slices */}
+                    <filter
+                      id="glow-pie"
+                      x="-50%"
+                      y="-50%"
+                      width="200%"
+                      height="200%"
+                    >
+                      <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+                      <feMerge>
+                        <feMergeNode in="coloredBlur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  <Pie
+                    data={allocationData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="55%"
+                    outerRadius="80%"
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                    style={{ filter: "url(#glow-pie)" }}
                   >
-                    <feGaussianBlur stdDeviation="4" result="coloredBlur" />
-                    <feMerge>
-                      <feMergeNode in="coloredBlur" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                </defs>
-                <Pie
-                  data={allocationData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={3}
-                  dataKey="value"
-                  stroke="none"
-                  style={{ filter: "url(#glow-pie)" }}
-                >
-                  {allocationData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={COLORS[index % COLORS.length]}
-                      stroke="rgba(0,0,0,0)"
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#18181b",
-                    borderColor: "#27272a",
-                    borderRadius: "8px",
-                  }}
-                  itemStyle={{ color: "#fff" }}
-                  formatter={(value) => formatCurrency(value, hideValues)}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            {/* center label showing total value */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="text-center">
-                <div className="text-[10px] text-[var(--text-secondary)]">
-                  total
-                </div>
-                <div className="text-sm font-bold text-white">
-                  {formatCurrency(totalValue, hideValues)}
+                    {allocationData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={COLORS[index % COLORS.length]}
+                        stroke="rgba(0,0,0,0)"
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#18181b",
+                      borderColor: "#27272a",
+                      borderRadius: "8px",
+                    }}
+                    itemStyle={{ color: "#fff" }}
+                    formatter={(value) => formatCurrency(value, hideValues)}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              {/* center label showing total value */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="text-center">
+                  <div className="text-[10px] text-[var(--text-secondary)]">
+                    Total
+                  </div>
+                  <div className="text-sm font-bold text-white">
+                    {formatCurrency(totalValue, hideValues)}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="relative w-full sm:w-[70%] lg:w-[60%] flex-1 min-h-[260px] flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-sm text-[var(--text-secondary)] mb-2">
+                  No allocation data
+                </div>
+                <div className="text-xs text-[var(--text-secondary)]">
+                  Add transactions with positive values to see allocation
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* legend showing each asset and its percentage */}
-          <div className="w-[50%] overflow-y-auto max-h-[180px] custom-scrollbar pl-2.5">
+          <div className="w-full sm:w-[30%] lg:w-[40%] flex-1 custom-scrollbar" style={{ overflowY: 'auto', overflowX: 'visible', paddingLeft: '18px', paddingRight: '10px' }}>
             <div className="space-y-1.5">
               {allocationData.map((entry, index) => (
                 <div
                   key={entry.name}
-                  className="flex items-center justify-between text-xs"
+                  className="flex items-center justify-between text-xs gap-2"
                 >
-                  <div className="flex items-center gap-1.5 overflow-hidden">
-                    <div
-                      className="min-w-[8px] h-2 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)]"
-                      style={{
-                        backgroundColor: COLORS[index % COLORS.length],
-                        boxShadow: `0 0 8px ${COLORS[index % COLORS.length]}`,
-                      }}
-                    ></div>
-                    <span className="text-[var(--text-secondary)] truncate font-medium text-[11px]" title={entry.name}>
-                      {truncateName(entry.name, 20)}
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <div className="w-3 h-3 flex items-center justify-center flex-shrink-0" style={{ marginLeft: '-4px', marginRight: '4px' }}>
+                      <div
+                        className="w-2 h-2 rounded-full"
+                        style={{
+                          backgroundColor: COLORS[index % COLORS.length],
+                          boxShadow: `0 0 6px ${COLORS[index % COLORS.length]}`,
+                        }}
+                      ></div>
+                    </div>
+                    <span className="text-[var(--text-secondary)] font-medium text-[11px] break-words overflow-wrap-anywhere" title={entry.name}>
+                      {entry.name}
                     </span>
                   </div>
-                  <span className="text-white font-bold text-[11px] ml-1">
+                  <span className="text-white font-bold text-[11px] flex-shrink-0">
                     {hideValues
                       ? "**"
                       : ((entry.value / totalValue) * 100).toFixed(1)}

@@ -6,7 +6,7 @@ import React from 'react';
 export default function EmptyState({ message, colSpan = 1 }) {
   return (
     <tr>
-      <td colSpan={colSpan} className="py-8 text-center text-[var(--text-secondary)]">
+      <td colSpan={colSpan} className="py-12 text-center text-[var(--text-secondary)]">
         {message}
       </td>
     </tr>
