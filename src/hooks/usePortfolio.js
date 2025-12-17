@@ -156,7 +156,7 @@ export function useAddTransaction() {
       );
     },
     onSuccess: (data) => {
-      // Check if asset class wasn't set in Airtable (but was preserved in app state)
+      // check if asset class wasn't set in Airtable (but was preserved in app state)
       if (data?._assetClassNotSet) {
         toast.success("Transaction added successfully", {
           duration: 5000,

@@ -20,7 +20,64 @@ const FIELD_IDS = {
   QUANTITY: "fldWytbHnrVNx0j6o", // quantity
   ASSET_CLASS: "fldI3N8n39cxzwetg", // stock or crypto
   TOTAL_COST: "fldsLa3vHeoy9Cu5f", // total cost
-  DATE: "fldtLF3YmzNZQWmgN", // transaction date
+  DATE: "fldtLF3YmzNZQWmgN", // transaction date (includes time in ISO format)
+};
+
+// gmt+8 timezone offset in milliseconds (8 hours)
+const GMT8_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+// helper to combine date and time into ISO datetime string for Airtable
+// user input is assumed to be in GMT+8, we convert to UTC for storage
+const combineDateAndTime = (date, time) => {
+  if (!date) return null;
+  // if time is provided, combine into ISO datetime string
+  if (time) {
+    // parse date and time components
+    const [year, month, day] = date.split('-').map(Number);
+    const [hours, minutes] = time.split(':').map(Number);
+    
+    // create a UTC timestamp treating the input values as if they were UTC
+    // then subtract 8 hours to convert from "GMT+8 input" to actual UTC
+    // example: user enters 09:30 GMT+8 -> we want to store 01:30 UTC
+    const inputAsUtcTimestamp = Date.UTC(year, month - 1, day, hours, minutes, 0, 0);
+    const actualUtcTimestamp = inputAsUtcTimestamp - GMT8_OFFSET_MS;
+    
+    return new Date(actualUtcTimestamp).toISOString();
+  }
+  // if no time, just return the date
+  return date;
+};
+
+// helper to parse datetime from Airtable into separate date and time
+// airtable returns UTC, we convert to GMT+8 for display
+const parseDatetime = (datetime) => {
+  if (!datetime) return { date: "", time: "" };
+  
+  try {
+    const dateObj = new Date(datetime);
+    if (isNaN(dateObj.getTime())) {
+      // invalid date, try to extract date portion
+      return { date: datetime.split("T")[0] || datetime, time: "" };
+    }
+    
+    // convert UTC to GMT+8 by adding 8 hours
+    const gmt8Time = new Date(dateObj.getTime() + GMT8_OFFSET_MS);
+    
+    // extract date in YYYY-MM-DD format (in GMT+8)
+    const year = gmt8Time.getUTCFullYear();
+    const month = String(gmt8Time.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(gmt8Time.getUTCDate()).padStart(2, "0");
+    const date = `${year}-${month}-${day}`;
+    
+    // extract time in HH:MM format (in GMT+8)
+    const hours = String(gmt8Time.getUTCHours()).padStart(2, "0");
+    const minutes = String(gmt8Time.getUTCMinutes()).padStart(2, "0");
+    const time = `${hours}:${minutes}`;
+    
+    return { date, time };
+  } catch {
+    return { date: datetime, time: "" };
+  }
 };
 
 // headers needed for all airtable api requests
@@ -59,6 +116,7 @@ const retryWithoutAssetClass = async (url, method, fields, price, transaction) =
     ...transaction,
     id: retryData.id || transaction.id,
     price: originalPriceNum,
+    time: transaction.time || "", // preserve time field
     assetType: transaction.assetType || transaction.assetClass || normalizeAssetType(retryData.fields?.["Asset Class"]),
     totalCost: transaction.quantity !== undefined 
       ? transaction.quantity * originalPriceNum 
@@ -109,13 +167,16 @@ export const fetchTransactions = async () => {
       // extract values using field names (airtable returns field names, not ids)
       // use parseFloat to preserve decimal precision, especially for crypto prices
       const quantity = parseFloat(fields.Quantity || 0);
-      // For price, preserve the exact value from Airtable - it might be a string or number
+      // for price, preserve the exact value from Airtable - it might be a string or number
       const priceRaw = fields.Price;
       const price = priceRaw != null ? parseFloat(priceRaw) : 0;
       const totalCost = parseFloat(fields["Total Cost"] || 0);
       
       // handle asset class - normalize using utility function
       const assetType = normalizeAssetType(fields["Asset Class"]);
+      
+      // parse datetime from Airtable into separate date and time
+      const { date, time } = parseDatetime(fields.Date);
 
       // return a clean transaction object
       return {
@@ -124,7 +185,8 @@ export const fetchTransactions = async () => {
         type: fields.Type || "Buy",
         quantity: quantity,
         price: price, // use the price from Airtable
-        date: fields.Date || "",
+        date: date, // date portion (YYYY-MM-DD)
+        time: time, // time portion (HH:MM)
         assetType: assetType,
         name: fields.Name || fields.Ticker || "",
         totalCost: totalCost || quantity * price,
@@ -144,7 +206,7 @@ export const createTransaction = async (transaction) => {
 
   // calculate total cost from quantity * price
   // preserve exact price value to avoid precision loss
-  // Keep original price as-is (might be string or number) to preserve full precision
+  // keep original price as-is (might be string or number) to preserve full precision
   const originalPrice = transaction.price; // Preserve original price value (string or number)
   const quantity = parseFloat(transaction.quantity);
   const price = parseFloat(originalPrice); // Convert to number only for Airtable
@@ -154,6 +216,9 @@ export const createTransaction = async (transaction) => {
   const transactionType = formatTransactionType(transaction.type);
 
   const assetClass = normalizeAssetType(transaction.assetType || transaction.assetClass || "Stock");
+  
+  // combine date and time into ISO datetime string for Airtable
+  const datetime = combineDateAndTime(transaction.date, transaction.time);
 
   const fields = {
     [FIELD_IDS.TICKER]: transaction.ticker,
@@ -162,7 +227,7 @@ export const createTransaction = async (transaction) => {
     [FIELD_IDS.QUANTITY]: quantity,
     [FIELD_IDS.PRICE]: price,
     [FIELD_IDS.TOTAL_COST]: totalCost,
-    [FIELD_IDS.DATE]: transaction.date,
+    [FIELD_IDS.DATE]: datetime, // combined date and time in ISO format
   };
 
   if (assetClass === "Stock" || assetClass === "Crypto") {
@@ -224,6 +289,9 @@ export const updateTransaction = async (id, transaction) => {
   const transactionType = formatTransactionType(transaction.type);
 
   const assetClass = normalizeAssetType(transaction.assetType || transaction.assetClass || "Stock");
+  
+  // combine date and time into ISO datetime string for Airtable
+  const datetime = combineDateAndTime(transaction.date, transaction.time);
 
   const fields = {
     [FIELD_IDS.TICKER]: transaction.ticker,
@@ -232,7 +300,7 @@ export const updateTransaction = async (id, transaction) => {
     [FIELD_IDS.QUANTITY]: quantity,
     [FIELD_IDS.PRICE]: price,
     [FIELD_IDS.TOTAL_COST]: totalCost,
-    [FIELD_IDS.DATE]: transaction.date,
+    [FIELD_IDS.DATE]: datetime, // combined date and time in ISO format
   };
 
   if (assetClass === "Stock" || assetClass === "Crypto") {

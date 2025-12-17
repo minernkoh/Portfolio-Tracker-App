@@ -1,33 +1,53 @@
-// reusable sorting hook for table components
-// used in Dashboard and PortfolioTable
+// reusable hook for table sorting logic
+// reduces duplication between PortfolioTable and Dashboard
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from "react";
 
-export function useSort(initialKey = null, initialDirection = 'desc') {
-  const [sortConfig, setSortConfig] = useState({
-    key: initialKey,
-    direction: initialDirection,
-  });
+export function useSort(initialConfig = { key: null, direction: "asc" }) {
+  const [sortConfig, setSortConfig] = useState(initialConfig);
 
+  // toggle sort direction or set new sort key
   const handleSort = useCallback((key) => {
-    setSortConfig((current) => {
-      let direction = 'asc';
-      // if clicking same column, toggle direction
-      if (current.key === key && current.direction === 'asc') {
-        direction = 'desc';
-      }
-      return { key, direction };
-    });
+    setSortConfig((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
   }, []);
 
+  // sort data using the current configuration
+  // accepts a custom comparator function for flexibility
+  const sortData = useCallback(
+    (data, comparator) => {
+      if (!sortConfig.key || !data?.length) return data;
+
+      return [...data].sort((a, b) => {
+        if (comparator) {
+          return comparator(a, b, sortConfig.key, sortConfig.direction);
+        }
+        // default comparison
+        const valA = a[sortConfig.key];
+        const valB = b[sortConfig.key];
+
+        if (typeof valA === "number" && typeof valB === "number") {
+          return sortConfig.direction === "asc" ? valA - valB : valB - valA;
+        }
+
+        const strA = String(valA ?? "").toLowerCase();
+        const strB = String(valB ?? "").toLowerCase();
+        return sortConfig.direction === "asc"
+          ? strA.localeCompare(strB)
+          : strB.localeCompare(strA);
+      });
+    },
+    [sortConfig]
+  );
+
+  // render sort arrow indicator
   const renderSortArrow = useCallback(
     (key) => {
       if (sortConfig.key !== key) return null;
-      return (
-        <span className="ml-1">
-          {sortConfig.direction === 'asc' ? '▲' : '▼'}
-        </span>
-      );
+      return sortConfig.direction === "asc" ? "▲" : "▼";
     },
     [sortConfig]
   );
@@ -35,7 +55,9 @@ export function useSort(initialKey = null, initialDirection = 'desc') {
   return {
     sortConfig,
     handleSort,
+    sortData,
     renderSortArrow,
   };
 }
 
+export default useSort;

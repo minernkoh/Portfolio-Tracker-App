@@ -13,7 +13,7 @@ export default function StatCard({
   isPositive,
   hideValues = false,
 }) {
-  // Determine text color based on positive/negative
+  // determine text color based on positive/negative
   const valueColorClass = isPositive !== undefined
     ? isPositive
       ? 'text-green'
@@ -26,7 +26,7 @@ export default function StatCard({
       : 'text-red'
     : '';
 
-  // Handle display value
+  // handle display value
   let displayValue;
   if (valueFormatted !== undefined) {
     displayValue = valueFormatted;
@@ -36,7 +36,7 @@ export default function StatCard({
     displayValue = formatCurrency(value, hideValues);
   }
 
-  // Handle subtitle
+  // handle subtitle
   let displaySubtitle;
   if (subtitleFormatted !== undefined) {
     displaySubtitle = subtitleFormatted;

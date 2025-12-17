@@ -9,30 +9,30 @@ export const formatNumber = (value, maxDecimals = 10) => {
   const num = Number(value);
   if (!isFinite(num)) return String(value);
   
-  // Handle zero
+  // handle zero
   if (num === 0) return "0";
   
-  // Use toFixed to avoid scientific notation, then parse
-  // Use a higher precision to avoid rounding issues
+  // use toFixed to avoid scientific notation, then parse
+  // use a higher precision to avoid rounding issues
   const fixedStr = num.toFixed(Math.max(maxDecimals, 15));
   
-  // Split into integer and decimal parts
+  // split into integer and decimal parts
   const parts = fixedStr.split(".");
   let integerPart = parts[0];
   let decimalPart = parts[1] || "";
   
-  // Limit decimal part to maxDecimals
+  // limit decimal part to maxDecimals
   if (decimalPart.length > maxDecimals) {
     decimalPart = decimalPart.substring(0, maxDecimals);
   }
   
-  // Remove trailing zeros from decimal part
+  // remove trailing zeros from decimal part
   decimalPart = decimalPart.replace(/0+$/, "");
   
-  // Format integer part with thousand separators
+  // format integer part with thousand separators
   const formattedInteger = Number(integerPart).toLocaleString("en-US");
   
-  // Return formatted number
+  // return formatted number
   if (decimalPart.length === 0) {
     return formattedInteger;
   }
@@ -52,8 +52,8 @@ export const formatCurrency = (value, hidden = false) => {
   const num = Number(value);
   if (!isFinite(num)) return "$0.00";
   
-  // Use javascript's built-in number formatter for US dollars
-  // Always show exactly 2 decimal places
+  // use javascript's built-in number formatter for US dollars
+  // always show exactly 2 decimal places
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -92,25 +92,39 @@ export const truncateName = (name, maxLength = 30) => {
   return name.substring(0, maxLength - 3) + "...";
 };
 
-// format a date string to show date and time nicely (removes T and Z)
-// example: formatDateTime("2024-01-15T14:30:00Z") returns "2024-01-15 14:30"
-export const formatDateTime = (dateString) => {
+// format a date string to show date and time nicely
+// accepts either: 
+// - a full datetime string like "2024-01-15T14:30:00Z"
+// - separate date and time parameters like ("2024-01-15", "14:30")
+// example: formatDateTime("2024-01-15", "14:30") returns "2024-01-15 14:30"
+export const formatDateTime = (dateString, timeString) => {
   if (!dateString) return "";
   
-  try {
-    const date = new Date(dateString);
-    // format as YYYY-MM-DD HH:MM
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  } catch (error) {
-    // if parsing fails, try to clean up the string by removing T and Z
-    return dateString.replace("T", " ").replace(/Z$/, "").substring(0, 16);
+  // if timeString is provided as second argument, combine them
+  if (timeString) {
+    return `${dateString} ${timeString}`;
   }
+  
+  // check if dateString already contains time (ISO format with T)
+  if (dateString.includes("T")) {
+    try {
+      const date = new Date(dateString);
+      // format as YYYY-MM-DD HH:MM
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      const hours = String(date.getHours()).padStart(2, "0");
+      const minutes = String(date.getMinutes()).padStart(2, "0");
+      
+      return `${year}-${month}-${day} ${hours}:${minutes}`;
+    } catch (error) {
+      // if parsing fails, try to clean up the string by removing T and Z
+      return dateString.replace("T", " ").replace(/Z$/, "").substring(0, 16);
+    }
+  }
+  
+  // if no time info, just return the date
+  return dateString;
 };
 
 // calculate the total value of an asset
