@@ -207,9 +207,9 @@ export const createTransaction = async (transaction) => {
   // calculate total cost from quantity * price
   // preserve exact price value to avoid precision loss
   // keep original price as-is (might be string or number) to preserve full precision
-  const originalPrice = transaction.price; // Preserve original price value (string or number)
+  const originalPrice = transaction.price; // preserve original price value (string or number)
   const quantity = parseFloat(transaction.quantity);
-  const price = parseFloat(originalPrice); // Convert to number only for Airtable
+  const price = parseFloat(originalPrice); // convert to number only for Airtable
   const totalCost = quantity * price;
 
   // format transaction type using utility

@@ -3,12 +3,15 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { XIcon, CheckIcon, SpinnerGap } from "@phosphor-icons/react";
+import { SpinnerGap } from "@phosphor-icons/react";
+import Button from "./ui/Button";
+import IconButton from "./ui/IconButton";
 import { getStockLogo, fetchStockPrices, fetchCryptoPrices, getCryptoInfo } from "../services/api";
-import { SEARCH_ASSETS, findAssetByTicker, searchAssets, getAssetsByType } from "../constants/assets";
+import { formatPriceInput } from "../services/utils";
+import { findAssetByTicker, searchAssets, getAssetsByType } from "../constants/assets";
 import FormInput from "./ui/FormInput";
 import AssetDropdown from "./ui/AssetDropdown";
-import ToggleButtonGroup from "./ui/ToggleButtonGroup";
+import ButtonGroup from "./ui/ButtonGroup";
 
 // default form state
 const getDefaultFormData = () => ({
@@ -96,7 +99,7 @@ export default function TransactionFormModal({
       if (priceData?.currentPrice > 0) {
         setFormData(prev => {
           if (forceUpdate || !prev.price?.trim()) {
-            return { ...prev, price: priceData.currentPrice.toString() };
+            return { ...prev, price: formatPriceInput(priceData.currentPrice) };
           }
           return prev;
         });
@@ -157,9 +160,11 @@ export default function TransactionFormModal({
         name: match.name,
         assetType: match.type.toLowerCase(),
         logo: match.type === "Stock" ? getStockLogo(match.ticker) : match.logo,
-        price: existingPrice,
+        price: tickerChanged ? "" : existingPrice,
       }));
-      if (tickerChanged || !existingPrice) {
+      if (tickerChanged) {
+        fetchCurrentPrice(match.ticker, match.type, true);
+      } else if (!existingPrice) {
         fetchCurrentPrice(match.ticker, match.type, false);
       }
     } else {
@@ -176,17 +181,25 @@ export default function TransactionFormModal({
             name: cryptoInfo?.name || upperValue,
             logo: cryptoInfo?.logo,
             assetType: "crypto",
-            price: existingPrice,
+            price: tickerChanged ? "" : existingPrice,
           }));
         } catch {
-          setFormData(prev => ({ ...prev, ticker: upperValue, assetType: "crypto", price: existingPrice }));
+          setFormData(prev => ({ ...prev, ticker: upperValue, assetType: "crypto", price: tickerChanged ? "" : existingPrice }));
         } finally {
           setIsFetchingCryptoInfo(false);
         }
-        if (tickerChanged || !existingPrice) fetchCurrentPrice(upperValue, "Crypto", false);
+        if (tickerChanged) {
+          fetchCurrentPrice(upperValue, "Crypto", true);
+        } else if (!existingPrice) {
+          fetchCurrentPrice(upperValue, "Crypto", false);
+        }
       } else {
-        setFormData(prev => ({ ...prev, ticker: upperValue, assetType: "stock", price: existingPrice }));
-        if (tickerChanged || !existingPrice) fetchCurrentPrice(upperValue, "Stock", false);
+        setFormData(prev => ({ ...prev, ticker: upperValue, assetType: "stock", price: tickerChanged ? "" : existingPrice }));
+        if (tickerChanged) {
+          fetchCurrentPrice(upperValue, "Stock", true);
+        } else if (!existingPrice) {
+          fetchCurrentPrice(upperValue, "Stock", false);
+        }
       }
     }
   }, [formData.ticker, formData.price, formData.assetType, isEditMode, fetchCurrentPrice]);
@@ -296,7 +309,6 @@ export default function TransactionFormModal({
   const asset = portfolioData.find(a => a.ticker === formData.ticker);
   const hasShares = asset?.quantity > 0;
   const canSell = isEditMode || (formData.ticker && hasShares);
-  const displayPrice = formData.price ? formatPriceForDisplay(formData.price) : "";
 
   const modalContent = (
     <div 
@@ -304,36 +316,42 @@ export default function TransactionFormModal({
       style={{ height: '100vh', width: '100vw', minHeight: '100vh' }}
     >
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl w-full max-w-md shadow-2xl overflow-hidden">
-        {/* Header */}
+        {/* header */}
         <div className="p-4 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--bg-card)]">
           <h2 className="text-lg font-bold text-[var(--text-primary)]">
             {isEditMode ? "Edit Transaction" : "Add Transaction"}
           </h2>
-          <button
+          <IconButton
+            variant="close"
             onClick={onClose}
             disabled={isSubmitting}
-            className="p-2 hover:bg-[var(--bg-app)] rounded-lg transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50"
-          >
-            <XIcon size={20} />
-          </button>
+            size={20}
+          />
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Buy/Sell Toggle */}
-          <ToggleButtonGroup
-            options={[
-              { value: "Buy", label: "Buy", activeClass: "bg-green-600 text-white shadow-green-900/20" },
-              { value: "Sell", label: "Sell", activeClass: "bg-red-600 text-white shadow-red-900/20", disabled: !canSell },
-            ]}
-            value={formData.type}
-            onChange={(type) => setFormData(prev => ({ ...prev, type }))}
-          />
+          {/* buy/sell toggle - hidden in edit mode */}
+          {!isEditMode && (
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-[var(--text-secondary)]">Order Type</label>
+              <ButtonGroup
+                variant="toggle"
+                options={[
+                  { value: "Buy", label: "Buy", activeClass: "bg-green-600 text-white shadow-green-900/20" },
+                  { value: "Sell", label: "Sell", activeClass: "bg-red-600 text-white shadow-red-900/20", disabled: !canSell },
+                ]}
+                value={formData.type}
+                onChange={(type) => setFormData(prev => ({ ...prev, type }))}
+              />
+            </div>
+          )}
 
-          {/* Asset Type Selector - hidden in edit mode */}
+          {/* asset type selector - hidden in edit mode */}
           {!isEditMode && (
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[var(--text-secondary)]">Asset Type</label>
-              <ToggleButtonGroup
+              <ButtonGroup
+                variant="toggle"
                 options={[
                   { value: "stock", label: "Stock" },
                   { value: "crypto", label: "Crypto" },
@@ -349,7 +367,7 @@ export default function TransactionFormModal({
             </div>
           )}
 
-          {/* Ticker Input - hidden in edit mode */}
+          {/* ticker input - hidden in edit mode */}
           {!isEditMode && (
             <div className="relative space-y-1">
               <label className="text-xs font-semibold text-[var(--text-secondary)]">Ticker Symbol</label>
@@ -370,14 +388,14 @@ export default function TransactionFormModal({
                       <span className="text-xs text-[var(--text-secondary)] capitalize">{formData.assetType}</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
+                  <IconButton
+                    variant="close"
                     onClick={clearAsset}
-                    className="p-1 hover:bg-[var(--bg-card-hover)] rounded-md transition-colors text-[var(--text-secondary)] hover:text-white flex-shrink-0 ml-2"
                     title="Clear and search again"
-                  >
-                    <XIcon size={18} weight="bold" />
-                  </button>
+                    size={18}
+                    weight="bold"
+                    className="flex-shrink-0 ml-2"
+                  />
                 </div>
               ) : (
                 // ticker input field
@@ -394,12 +412,12 @@ export default function TransactionFormModal({
                 />
               )}
 
-              {/* Sell warning */}
+              {/* sell warning */}
               {formData.type === "Sell" && formData.ticker && !hasShares && (
                 <p className="text-xs text-red-500 mt-1">You don't own any of this asset</p>
               )}
 
-              {/* Dropdowns */}
+              {/* dropdowns */}
               {showPopularDropdown && !formData.ticker && !isEditMode && (
                 <AssetDropdown 
                   assets={getAssetsByType(formData.assetType, 6)} 
@@ -413,13 +431,13 @@ export default function TransactionFormModal({
             </div>
           )}
 
-          {/* Quantity and Price */}
+          {/* quantity and price */}
           <div className="grid grid-cols-2 gap-4">
             <FormInput
               label="Quantity"
               name="quantity"
               type="number"
-              step="0.0000000001"
+              step="any"
               min="0"
               value={formData.quantity}
               onChange={handleChange}
@@ -433,9 +451,17 @@ export default function TransactionFormModal({
               type="number"
               step="0.01"
               min="0"
-              value={displayPrice}
+              value={formData.price}
               onChange={handleChange}
-              onBlur={(e) => { const v = e.target.value; if (v?.trim()) setFormData(prev => ({ ...prev, price: v.trim() })); }}
+              onBlur={(e) => {
+                const v = e.target.value?.trim();
+                if (v) {
+                  const num = parseFloat(v);
+                  if (!isNaN(num)) {
+                    setFormData(prev => ({ ...prev, price: formatPriceInput(num) }));
+                  }
+                }
+              }}
               placeholder={isFetchingPrice ? "Loading..." : "0.00"}
               error={errors.price}
               disabled={isSubmitting || isFetchingPrice}
@@ -443,7 +469,7 @@ export default function TransactionFormModal({
             />
           </div>
 
-          {/* Date and Time */}
+          {/* date and time */}
           <div className="grid grid-cols-2 gap-4">
             <FormInput
               label="Date"
@@ -470,32 +496,23 @@ export default function TransactionFormModal({
             />
           </div>
 
-          {/* Error message */}
+          {/* error message */}
           {errors.submit && (
             <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-3 text-sm text-red-400">
               {errors.submit}
             </div>
           )}
 
-          {/* Submit button */}
+          {/* submit button */}
           <div className="pt-2">
-            <button
+            <Button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full bg-[var(--text-primary)] text-[var(--bg-app)] font-bold py-2.5 rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
+              loading={isSubmitting}
+              fullWidth
+              size="lg"
             >
-              {isSubmitting ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <CheckIcon size={18} weight="bold" />
-                  {isEditMode ? "Update Transaction" : "Add Transaction"}
-                </>
-              )}
-            </button>
+              {isEditMode ? "Edit Transaction" : "Add Transaction"}
+            </Button>
           </div>
         </form>
       </div>

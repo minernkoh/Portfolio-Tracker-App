@@ -4,7 +4,7 @@
 import { useState, useCallback } from 'react';
 import { useAddTransaction, useUpdateTransaction } from './usePortfolio';
 
-export function useTransactionModal(portfolioData = []) {
+export function useTransactionModal() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   
@@ -41,7 +41,7 @@ export function useTransactionModal(portfolioData = []) {
   }, []);
 
   // handle adding a new transaction
-  const handleAddTransaction = useCallback(async (newTx) => {
+  const handleAddTransaction = useCallback((newTx) => {
     addTransaction.mutate(newTx);
   }, [addTransaction]);
 
@@ -71,7 +71,6 @@ export function useTransactionModal(portfolioData = []) {
     closeModal,
     handleSubmit,
     isPending: addTransaction.isPending || updateTransaction.isPending,
-    portfolioData,
   };
 }
 

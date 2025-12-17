@@ -2,7 +2,8 @@
 
 import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { PlusIcon, DotsThreeIcon, TrashIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
+import { TrashIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
+import IconButton from './ui/IconButton';
 import { formatCurrency, formatQuantity, truncateName, calculatePnLPercentage, format24hChange } from '../services/utils';
 import AssetLogo from './ui/AssetLogo';
 import EmptyState from './ui/EmptyState';
@@ -117,7 +118,7 @@ function AssetRow({
 
   return (
     <tr className="group hover:bg-[var(--bg-card-hover)] transition-colors">
-      {/* Asset name and logo */}
+      {/* asset name and logo */}
       <td className="py-4 px-6">
         <Link 
           to={`/asset/${asset.ticker}`}
@@ -134,7 +135,7 @@ function AssetRow({
         </Link>
       </td>
       
-      {/* Current price */}
+      {/* current price */}
       <td className="py-4 px-6 text-right text-sm font-medium text-[var(--text-primary)]">
         {formatCurrency(asset.currentPrice, hideValues)}
       </td>
@@ -144,7 +145,7 @@ function AssetRow({
         {change24h.display}
       </td>
 
-      {/* Market value */}
+      {/* market value */}
       <td className="py-4 px-6 text-right">
         <div className="text-sm font-bold text-[var(--text-primary)]">
           {formatCurrency(asset.totalValue, hideValues)}
@@ -154,12 +155,12 @@ function AssetRow({
         </div>
       </td>
 
-      {/* Average price */}
+      {/* average price */}
       <td className="py-4 px-6 text-right text-sm font-medium text-[var(--text-primary)]">
         {formatCurrency(asset.avgPrice, hideValues)}
       </td>
 
-      {/* Profit/Loss */}
+      {/* profit/loss */}
       <td className="py-4 px-6 text-right">
         <div className={`text-sm font-bold ${asset.pnl >= 0 ? 'text-green' : 'text-red'}`}>
           {asset.pnl > 0 ? '+' : ''}{formatCurrency(asset.pnl, hideValues)}
@@ -169,24 +170,21 @@ function AssetRow({
         </div>
       </td>
       
-      {/* Actions */}
+      {/* actions */}
       <td className="py-4 px-6 text-right" onClick={(e) => e.stopPropagation()}>
         <div className="relative flex items-center justify-end gap-1">
-          <button
-            className="hover:text-white p-1 text-[var(--text-secondary)] hover:bg-[var(--border-subtle)] rounded-md transition-colors"
+          <IconButton
+            variant="add"
+            size={20}
             onClick={(e) => { e.stopPropagation(); onAddTransaction(asset.ticker); }}
             title="Add transaction"
-          >
-            <PlusIcon size={20} weight="bold" />
-          </button>
-          
-          <button 
-            className="hover:text-blue-400 p-1 text-[var(--text-secondary)] hover:bg-[var(--border-subtle)] rounded-md transition-colors" 
+          />
+          <IconButton
+            variant="more"
+            size={24}
             onClick={(e) => onDropdownToggle(e, asset.id)}
             title="Actions"
-          >
-            <DotsThreeIcon size={24} weight="bold" />
-          </button>
+          />
 
           {isDropdownOpen && (
             <div 

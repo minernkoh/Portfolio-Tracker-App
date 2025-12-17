@@ -11,6 +11,58 @@ const CACHE_KEY_STOCKS = "portfolio_price_cache_stocks";
 const CACHE_KEY_CRYPTO = "portfolio_price_cache_crypto";
 const CRYPTO_INFO_CACHE_KEY = "portfolio_crypto_info_cache";
 
+// API request counter - tracks API requests for debugging and monitoring
+const apiRequestCounter = {
+  twelveData: 0,
+  coinGecko: 0,
+  coinGeckoSearch: 0,
+  sessionStart: new Date().toISOString(),
+};
+
+// log and increment counter for API requests
+const logApiRequest = (api, symbols, fromCache = false) => {
+  if (fromCache) {
+    console.log(`📦 [${api}] Cache hit - ${symbols.length} symbol(s): ${symbols.join(', ')}`);
+    return;
+  }
+  
+  apiRequestCounter[api]++;
+  const total = apiRequestCounter.twelveData + apiRequestCounter.coinGecko + apiRequestCounter.coinGeckoSearch;
+  
+  console.log(
+    `🌐 [${api}] API Request #${apiRequestCounter[api]} | ` +
+    `${symbols.length} symbol(s): ${symbols.join(', ')} | ` +
+    `Total requests this session: ${total}`
+  );
+};
+
+// export counter for console access: apiStats.get(), apiStats.reset()
+export const apiStats = {
+  get: () => {
+    const total = apiRequestCounter.twelveData + apiRequestCounter.coinGecko + apiRequestCounter.coinGeckoSearch;
+    console.table({
+      'Twelve Data (stocks)': apiRequestCounter.twelveData,
+      'CoinGecko (prices)': apiRequestCounter.coinGecko,
+      'CoinGecko (search)': apiRequestCounter.coinGeckoSearch,
+      'Total': total,
+      'Session started': apiRequestCounter.sessionStart,
+    });
+    return apiRequestCounter;
+  },
+  reset: () => {
+    apiRequestCounter.twelveData = 0;
+    apiRequestCounter.coinGecko = 0;
+    apiRequestCounter.coinGeckoSearch = 0;
+    apiRequestCounter.sessionStart = new Date().toISOString();
+    console.log('🔄 API request counters reset');
+  },
+};
+
+// make apiStats available in browser console
+if (typeof window !== 'undefined') {
+  window.apiStats = apiStats;
+}
+
 // generate deterministic color from ticker for avatar
 const getTickerColor = (ticker) => {
   let hash = 0;
@@ -60,61 +112,20 @@ const isRateLimited = (response, data) => {
   return false;
 };
 
-// fetch single stock price from TwelveData
-const fetchStockPrice = async (symbol, useCache = true) => {
-  if (useCache) {
-    const cached = getFromCache(CACHE_KEY_STOCKS, symbol);
-    if (cached) return cached;
-  }
-
-  if (!TWELVE_DATA_API_KEY) {
-    console.warn("TwelveData API key not found");
-    return useCache ? getAnyCached(CACHE_KEY_STOCKS, symbol) : null;
-  }
-
-  try {
-    const response = await fetch(
-      `https://api.twelvedata.com/quote?symbol=${symbol}&apikey=${TWELVE_DATA_API_KEY}`
-    );
-
-    if (!response.ok) {
-      if (isRateLimited(response)) {
-        console.warn(`TwelveData rate limit for ${symbol}, using cache`);
-      }
-      return useCache ? getAnyCached(CACHE_KEY_STOCKS, symbol) : null;
-    }
-
-    const data = await response.json();
-
-    if (data.code && data.code !== 200 || data.status === "error") {
-      if (isRateLimited(response, data)) {
-        console.warn(`TwelveData rate limit for ${symbol}, using cache`);
-      }
-      return useCache ? getAnyCached(CACHE_KEY_STOCKS, symbol) : null;
-    }
-
-    if (!data.close) {
-      return useCache ? getAnyCached(CACHE_KEY_STOCKS, symbol) : null;
-    }
-
-    const priceData = {
-      currentPrice: parseFloat(data.close),
-      priceChange24h: parseFloat(data.percent_change || 0),
-      high: parseFloat(data.high || 0),
-      low: parseFloat(data.low || 0),
-      volume: parseInt(data.volume || 0),
-      name: data.name || null,
-    };
-
-    if (useCache) setToCache(CACHE_KEY_STOCKS, symbol, priceData);
-    return priceData;
-  } catch (error) {
-    console.error(`Error fetching stock price for ${symbol}:`, error);
-    return useCache ? getAnyCached(CACHE_KEY_STOCKS, symbol) : null;
-  }
+// parse stock data from TwelveData response
+const parseStockData = (data) => {
+  if (!data?.close) return null;
+  return {
+    currentPrice: parseFloat(data.close),
+    priceChange24h: parseFloat(data.percent_change || 0),
+    high: parseFloat(data.high || 0),
+    low: parseFloat(data.low || 0),
+    volume: parseInt(data.volume || 0),
+    name: data.name || null,
+  };
 };
 
-// fetch prices for multiple stocks
+// fetch prices for multiple stocks using batch request (1 API call for all symbols)
 export const fetchStockPrices = async (tickers = []) => {
   if (!tickers?.length) return {};
 
@@ -126,28 +137,85 @@ export const fetchStockPrices = async (tickers = []) => {
     priceMap[ticker] = { ...cachedMap[ticker], logo: getStockLogo(ticker) };
   });
 
-  if (uncachedTickers.length === 0) return priceMap;
+  if (uncachedTickers.length === 0) {
+    if (Object.keys(cachedMap).length > 0) {
+      logApiRequest('twelveData', Object.keys(cachedMap), true);
+    }
+    return priceMap;
+  }
 
-  // stagger requests to avoid rate limits
-  const tickersToFetch = uncachedTickers.slice(0, 15);
-  const fetchPromises = tickersToFetch.map((ticker, index) =>
-    new Promise((resolve) => {
-      setTimeout(async () => {
-        const priceData = await fetchStockPrice(ticker, true);
-        resolve({
-          ticker,
-          data: priceData
-            ? { currentPrice: priceData.currentPrice, priceChange24h: priceData.priceChange24h, logo: getStockLogo(ticker), name: priceData.name }
-            : { currentPrice: 0, priceChange24h: 0, logo: getStockLogo(ticker), name: null },
-        });
-      }, index * 200);
-    })
-  );
+  if (!TWELVE_DATA_API_KEY) {
+    console.warn("TwelveData API key not found");
+    uncachedTickers.forEach((ticker) => {
+      const cached = getAnyCached(CACHE_KEY_STOCKS, ticker);
+      priceMap[ticker] = cached 
+        ? { ...cached, logo: getStockLogo(ticker) }
+        : { currentPrice: 0, priceChange24h: 0, logo: getStockLogo(ticker), name: null };
+    });
+    return priceMap;
+  }
 
-  const results = await Promise.all(fetchPromises);
-  results.forEach(({ ticker, data }) => { priceMap[ticker] = data; });
+  try {
+    // batch request: fetch all symbols in one API call
+    const symbolsParam = uncachedTickers.join(',');
+    logApiRequest('twelveData', uncachedTickers);
+    const response = await fetch(
+      `https://api.twelvedata.com/quote?symbol=${symbolsParam}&apikey=${TWELVE_DATA_API_KEY}`
+    );
 
-  return priceMap;
+    if (!response.ok) {
+      if (isRateLimited(response)) {
+        console.warn("TwelveData rate limit hit, using cache");
+      }
+      // fall back to cached data
+      uncachedTickers.forEach((ticker) => {
+        const cached = getAnyCached(CACHE_KEY_STOCKS, ticker);
+        priceMap[ticker] = cached 
+          ? { ...cached, logo: getStockLogo(ticker) }
+          : { currentPrice: 0, priceChange24h: 0, logo: getStockLogo(ticker), name: null };
+      });
+      return priceMap;
+    }
+
+    const data = await response.json();
+
+    // handle response format:
+    // - single symbol: { close: "150", name: "Apple", ... }
+    // - multiple symbols: { "AAPL": { close: "150", ... }, "MSFT": { close: "380", ... } }
+    const isSingleSymbol = uncachedTickers.length === 1;
+
+    uncachedTickers.forEach((ticker) => {
+      const stockData = isSingleSymbol ? data : data[ticker];
+      const parsed = parseStockData(stockData);
+
+      if (parsed) {
+        priceMap[ticker] = {
+          currentPrice: parsed.currentPrice,
+          priceChange24h: parsed.priceChange24h,
+          logo: getStockLogo(ticker),
+          name: parsed.name,
+        };
+        setToCache(CACHE_KEY_STOCKS, ticker, parsed);
+      } else {
+        // use cached data or default
+        const cached = getAnyCached(CACHE_KEY_STOCKS, ticker);
+        priceMap[ticker] = cached 
+          ? { ...cached, logo: getStockLogo(ticker) }
+          : { currentPrice: 0, priceChange24h: 0, logo: getStockLogo(ticker), name: null };
+      }
+    });
+
+    return priceMap;
+  } catch (error) {
+    console.error("Error fetching stock prices:", error);
+    uncachedTickers.forEach((ticker) => {
+      const cached = getAnyCached(CACHE_KEY_STOCKS, ticker);
+      priceMap[ticker] = cached 
+        ? { ...cached, logo: getStockLogo(ticker) }
+        : { currentPrice: 0, priceChange24h: 0, logo: getStockLogo(ticker), name: null };
+    });
+    return priceMap;
+  }
 };
 
 // search for crypto by ticker using CoinGecko
@@ -157,6 +225,7 @@ const searchCryptoByTicker = async (ticker) => {
 
   try {
     const headers = COINGECKO_API_KEY ? { "x-cg-demo-api-key": COINGECKO_API_KEY } : {};
+    logApiRequest('coinGeckoSearch', [ticker]);
     const response = await fetch(
       `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(ticker)}`,
       { headers }
@@ -212,7 +281,12 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
   const { cachedMap, uncachedTickers } = getCachedBatch(CACHE_KEY_CRYPTO, cryptoTickers);
   let priceMap = { ...cachedMap };
 
-  if (uncachedTickers.length === 0) return populateCryptoLogos(priceMap);
+  if (uncachedTickers.length === 0) {
+    if (Object.keys(cachedMap).length > 0) {
+      logApiRequest('coinGecko', Object.keys(cachedMap), true);
+    }
+    return populateCryptoLogos(priceMap);
+  }
 
   try {
     // map tickers to CoinGecko IDs
@@ -241,6 +315,7 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
     if (cryptoIds.length === 0) return populateCryptoLogos(priceMap);
 
     const headers = COINGECKO_API_KEY ? { "x-cg-demo-api-key": COINGECKO_API_KEY } : {};
+    logApiRequest('coinGecko', uncachedTickers);
     const response = await fetch(
       `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoIds.join(",")}&vs_currencies=usd&include_24hr_change=true`,
       { headers }

@@ -6,7 +6,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import { formatCurrency, calculateValue } from "../services/utils";
-import FilterButtons from "./ui/FilterButtons";
+import ButtonGroup from "./ui/ButtonGroup";
 
 const CHART_COLORS = ["#3b82f6", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899", "#6366f1"];
 const TIME_PERIODS = ["7d", "1m", "3m", "ytd", "1y", "all"];
@@ -169,22 +169,15 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {/* Performance Chart */}
+      {/* performance chart */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-          <div className="flex items-center gap-2">
-            <h2 className="text-white font-bold text-sm">Performance</h2>
-            {!hideValues && historyData.length > 1 && (
-              <span className={`text-sm font-bold ml-2 ${historicalTrend ? "text-green" : "text-red"}`}>
-                {historicalTrend ? "▲" : "▼"}{" "}
-                {((Math.abs(historyData[historyData.length - 1].value - historyData[0].value) / historyData[0].value) * 100).toFixed(2)}%
-              </span>
-            )}
-          </div>
-          <FilterButtons
+          <h2 className="text-white font-bold text-sm">Performance</h2>
+          <ButtonGroup
+            variant="pills"
             options={TIME_PERIODS}
-            activeFilter={timePeriod}
-            onFilterChange={setTimePeriod}
+            value={timePeriod}
+            onChange={setTimePeriod}
             labelMap={{ "7d": "7D", "1m": "1M", "3m": "3M", ytd: "YTD", "1y": "1Y", all: "ALL" }}
           />
         </div>
@@ -224,7 +217,7 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
         )}
       </div>
 
-      {/* Allocation Chart */}
+      {/* allocation chart */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col" style={{ overflow: 'visible' }}>
         <div className="mb-6">
           <h2 className="text-white font-bold text-sm">Allocation</h2>
@@ -261,7 +254,6 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
               </ResponsiveContainer>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="text-center">
-                  <div className="text-[10px] text-[var(--text-secondary)]">Total</div>
                   <div className="text-sm font-bold text-white">{formatCurrency(totalValue, hideValues)}</div>
                 </div>
               </div>
@@ -275,7 +267,7 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
             </div>
           )}
 
-          {/* Legend */}
+          {/* legend */}
           <div className="w-full sm:w-[30%] lg:w-[40%] flex-1 custom-scrollbar" style={{ overflowY: 'auto', paddingLeft: '18px', paddingRight: '10px' }}>
             <div className="space-y-1.5">
               {allocationData.map((entry, i) => (

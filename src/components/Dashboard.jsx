@@ -5,13 +5,12 @@ import Layout from "./Layout";
 import PortfolioCharts from "./PortfolioCharts";
 import PortfolioTable from "./PortfolioTable";
 import TransactionFormModal from "./TransactionFormModal";
-import AddTransactionButton from "./ui/AddTransactionButton";
+import Button from "./ui/Button";
 import LoadingState from "./ui/LoadingState";
-import TabSwitcher from "./ui/TabSwitcher";
+import ButtonGroup from "./ui/ButtonGroup";
 import StatCard from "./ui/StatCard";
-import FilterButtons from "./ui/FilterButtons";
 import TransactionTypeBadge from "./ui/TransactionTypeBadge";
-import EditButton from "./ui/EditButton";
+import IconButton from "./ui/IconButton";
 import EmptyState from "./ui/EmptyState";
 import {
   formatCurrency,
@@ -25,6 +24,7 @@ import {
   useTransactions,
   usePrices,
   useDeleteAsset,
+  useDeleteTransaction,
   useAirtableStatus,
 } from "../hooks/usePortfolio";
 import { useTransactionModal } from "../hooks/useTransactionModal";
@@ -37,6 +37,7 @@ export default function Dashboard() {
   const { data: transactions = [], isLoading, error: loadError, refetch } = useTransactions();
   const { prices, isFetching: pricesFetching } = usePrices(transactions);
   const deleteAsset = useDeleteAsset();
+  const deleteTransactionMutation = useDeleteTransaction();
 
   // calculate portfolio data
   const portfolioData = useMemo(() => calculatePortfolioData(transactions, prices), [transactions, prices]);
@@ -51,7 +52,7 @@ export default function Dashboard() {
     closeModal,
     handleSubmit,
     isPending,
-  } = useTransactionModal(portfolioData);
+  } = useTransactionModal();
 
   // ui state
   const [hideValues, setHideValues] = useState(false);
@@ -89,12 +90,33 @@ export default function Dashboard() {
     deleteAsset.mutate({ ticker, transactionIds: txsToDelete.map((tx) => tx.id) });
   }, [transactions, deleteAsset]);
 
+  // delete transaction handler
+  const handleDeleteTransaction = useCallback((tx) => {
+    if (window.confirm(`Delete this ${tx.type.toLowerCase()} transaction for ${tx.quantity} ${tx.ticker}?`)) {
+      deleteTransactionMutation.mutate(tx.id);
+    }
+  }, [deleteTransactionMutation]);
+
   // filter and sort transactions
   const allTransactionsSorted = useMemo(() => {
     const filtered = transactions.filter((tx) => filterType === "All" || tx.assetType === filterType);
     return sortData(filtered, (a, b, key, direction) => {
       if (key === "date") {
-        return direction === "asc" ? new Date(a.date) - new Date(b.date) : new Date(b.date) - new Date(a.date);
+        // combine date and time for accurate sorting
+        const dateTimeA = a.time ? `${a.date}T${a.time}` : a.date;
+        const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
+        const dateComparison = new Date(dateTimeA) - new Date(dateTimeB);
+        
+        // if dates are equal, use secondary sort by type
+        // for descending (newest first): Sells before Buys (reverse of FIFO)
+        // for ascending (oldest first): Buys before Sells (FIFO order)
+        if (dateComparison === 0) {
+          const typeA = a.type?.toLowerCase() === 'buy' ? 0 : 1;
+          const typeB = b.type?.toLowerCase() === 'buy' ? 0 : 1;
+          return direction === 'asc' ? typeA - typeB : typeB - typeA;
+        }
+        
+        return direction === "asc" ? dateComparison : -dateComparison;
       }
       if (key === "cost") {
         const valA = a.quantity * a.price;
@@ -149,7 +171,7 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="space-y-8 animate-fade-in">
-        {/* Header */}
+        {/* header */}
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
           <div className="flex flex-col gap-4">
             <div>
@@ -186,21 +208,22 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <TabSwitcher
-              tabs={[{ id: "overview", label: "Overview" }, { id: "transactions", label: "Transactions" }]}
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
+            <ButtonGroup
+              variant="tabs"
+              options={[{ id: "overview", label: "Overview" }, { id: "transactions", label: "Transactions" }]}
+              value={activeTab}
+              onChange={setActiveTab}
             />
           </div>
           <div className="flex flex-col items-end gap-4">
-            <AddTransactionButton onClick={() => openAddModal()} disabled={isPending} />
+            <Button icon="plus" onClick={() => openAddModal()} disabled={isPending}>Add Transaction</Button>
           </div>
         </div>
 
-        {/* Overview Tab */}
+        {/* overview tab */}
         {activeTab === "overview" && (
           <div className="space-y-6 animate-slide-up">
-            {/* Stats Cards */}
+            {/* stats cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard
                 label="All-time profit/loss"
@@ -237,17 +260,18 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Charts */}
+            {/* charts */}
             <PortfolioCharts portfolioData={portfolioData} transactions={transactions} prices={prices} hideValues={hideValues} />
 
-            {/* Assets Table */}
+            {/* assets table */}
             <div>
               <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <h2 className="text-lg font-bold text-white">Assets</h2>
-                <FilterButtons
+                <ButtonGroup
+                  variant="pills"
                   options={["All", "Stock", "Crypto"]}
-                  activeFilter={filterType}
-                  onFilterChange={setFilterType}
+                  value={filterType}
+                  onChange={setFilterType}
                   labelMap={{ Stock: "Stocks" }}
                 />
               </div>
@@ -261,7 +285,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Transactions Tab */}
+        {/* transactions tab */}
         {activeTab === "transactions" && (
           <div className="animate-slide-up bg-[var(--bg-card)] rounded-xl border border-[var(--border-subtle)] overflow-hidden min-h-[400px]">
             <div className="overflow-x-auto">
@@ -299,7 +323,12 @@ export default function Dashboard() {
                         <td className="py-4 px-6 text-sm text-right text-white">{formatQuantity(tx.quantity)}</td>
                         <td className="py-4 px-6 text-sm text-right text-[var(--text-secondary)]">{formatCurrency(tx.price, hideValues)}</td>
                         <td className="py-4 px-6 text-sm text-right font-medium text-white">{formatCurrency(tx.quantity * tx.price, hideValues)}</td>
-                        <td className="py-4 px-6 text-right"><EditButton onClick={() => openEditModal(tx)} /></td>
+                        <td className="py-4 px-6 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <IconButton variant="edit" onClick={() => openEditModal(tx)} disabled={deleteTransactionMutation.isPending} />
+                            <IconButton variant="delete" onClick={() => handleDeleteTransaction(tx)} disabled={deleteTransactionMutation.isPending} />
+                          </div>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -309,7 +338,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Transaction Modal */}
+        {/* transaction modal */}
         {isFormOpen && (
           <TransactionFormModal
             isOpen={isFormOpen}

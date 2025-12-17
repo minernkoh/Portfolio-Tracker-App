@@ -40,6 +40,44 @@ export const formatNumber = (value, maxDecimals = 10) => {
   return `${formattedInteger}.${decimalPart}`;
 };
 
+// format a price with appropriate decimal places based on value
+// for prices >= $1: use 2 decimal places
+// for prices < $1: preserve significant digits (find first non-zero digit + 4 more)
+// example: formatPriceInput(100.5) returns "100.50"
+// example: formatPriceInput(0.00001234) returns "0.00001234"
+export const formatPriceInput = (price) => {
+  if (price === null || price === undefined || isNaN(price)) return "";
+  
+  const num = Number(price);
+  if (num === 0) return "0.00";
+  
+  // for prices $1 and above, use 2 decimal places
+  if (Math.abs(num) >= 1) {
+    return num.toFixed(2);
+  }
+  
+  // for prices less than $1, find significant digits
+  // convert to string and find the first non-zero digit after decimal
+  const str = num.toFixed(12); // high precision to find significant digits
+  const decimalIndex = str.indexOf('.');
+  
+  if (decimalIndex === -1) return num.toFixed(2);
+  
+  const afterDecimal = str.slice(decimalIndex + 1);
+  let firstNonZeroIndex = 0;
+  
+  for (let i = 0; i < afterDecimal.length; i++) {
+    if (afterDecimal[i] !== '0') {
+      firstNonZeroIndex = i;
+      break;
+    }
+  }
+  
+  // show first significant digit + 3 more digits (4 significant figures after first non-zero)
+  const decimals = Math.min(firstNonZeroIndex + 4, 10);
+  return num.toFixed(decimals);
+};
+
 // format a number as US dollars (money format) - always exactly 2 decimal places
 // example: formatCurrency(1000) returns "$1,000.00"
 // example: formatCurrency(0.001) returns "$0.00"
@@ -196,12 +234,26 @@ export const format24hChange = (changePercent) => {
 // this combines buy/sell history with current prices to show portfolio value
 // uses FIFO (first in, first out) for sell calculations
 export const calculatePortfolioData = (transactions, prices) => {
-  // sort transactions by date (oldest first) - required for FIFO to work correctly
+  // sort transactions by date/time (oldest first) - required for FIFO to work correctly
   // FIFO needs to process transactions in chronological order to determine which shares were sold
+  // secondary sort: when timestamps are equal, process Buys before Sells (you can't sell what you don't own)
   const sortedTransactions = [...transactions].sort((a, b) => {
-    const dateA = new Date(a.date);
-    const dateB = new Date(b.date);
-    return dateA - dateB; // ascending order (oldest first)
+    // combine date and time for accurate sorting
+    const dateTimeA = a.time ? `${a.date}T${a.time}` : a.date;
+    const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
+    const dateA = new Date(dateTimeA);
+    const dateB = new Date(dateTimeB);
+    
+    // primary sort: by date/time (ascending - oldest first)
+    if (dateA.getTime() !== dateB.getTime()) {
+      return dateA - dateB;
+    }
+    
+    // secondary sort: when timestamps are equal, Buys come before Sells
+    // this ensures you can't sell shares you haven't bought yet
+    const typeA = a.type?.toLowerCase() === 'buy' ? 0 : 1;
+    const typeB = b.type?.toLowerCase() === 'buy' ? 0 : 1;
+    return typeA - typeB;
   });
 
   // group transactions by ticker (asset symbol)

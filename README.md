@@ -26,20 +26,20 @@ A modern investment portfolio tracker built with React. Track your stocks and cr
 ## 🎯 What I Learned
 
 - **TanStack Query** - Declarative data fetching with built-in caching, background refetching, and optimistic updates significantly reduced boilerplate while improving UX
-- **Component Abstraction** - Extracting reusable UI components (`FormInput`, `ToggleButtonGroup`, `EmptyState`) and custom hooks (`useSort`, `useClickOutside`) reduced code duplication by ~60%
-- **Resilient API Design** - Multi-layer caching (fresh → stale → expired), request staggering, and graceful degradation ensure the app works even when APIs fail
+- **Component Abstraction** - Extracting reusable UI components (`FormInput`, `ButtonGroup`, `IconButton`) and custom hooks (`useSort`, `useClickOutside`) reduced code duplication by ~60%
+- **Resilient API Design** - Multi-layer caching (fresh → stale → expired), batch API requests to minimize rate limit usage, and graceful degradation ensure the app works even when APIs fail
 - **Financial Domain Logic** - Implementing FIFO cost basis required understanding investment accounting—processing transactions chronologically while maintaining buy queues per asset
 - **Single Source of Truth** - Consolidating shared data (like crypto mappings) into centralized constants prevents drift and simplifies maintenance
 
 ## 🔮 Future Enhancements
 
-- [ ] Historical price charts for individual assets
-- [ ] Multiple portfolio support (retirement, trading accounts)
-- [ ] CSV import/export for bulk transactions
-- [ ] Dividend and income tracking
-- [ ] Price alerts and notifications
-- [ ] Dark/light theme toggle
-- [ ] PWA support for offline access
+- Historical price charts for individual assets
+- Multiple portfolio support (retirement, trading accounts)
+- CSV import/export for bulk transactions
+- Dividend and income tracking
+- Price alerts and notifications
+- Dark/light theme toggle
+- PWA support for offline access
 
 ## 📁 Project Structure
 
@@ -54,14 +54,12 @@ src/
 │   ├── Layout.jsx              # Page wrapper with footer
 │   └── ui/                     # Reusable UI components
 │       ├── FormInput.jsx       # Form input with validation
-│       ├── ToggleButtonGroup.jsx # Toggle button group
+│       ├── ButtonGroup.jsx     # Button group with variants (pills, tabs, toggle)
 │       ├── AssetDropdown.jsx   # Asset autocomplete dropdown
 │       ├── StatCard.jsx        # Metric display card
-│       ├── FilterButtons.jsx   # Asset type filter
-│       ├── TabSwitcher.jsx     # Tab navigation
 │       ├── AssetLogo.jsx       # Logo with fallback
-│       ├── AddTransactionButton.jsx # Add transaction button
-│       ├── EditButton.jsx      # Edit action button
+│       ├── Button.jsx          # Button with variants (primary, secondary)
+│       ├── IconButton.jsx      # Icon button with variants (edit, delete, add, more, close)
 │       ├── TransactionTypeBadge.jsx # Buy/Sell badge
 │       ├── LoadingState.jsx    # Loading indicator
 │       └── EmptyState.jsx      # Empty table state
