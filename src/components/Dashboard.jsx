@@ -12,6 +12,7 @@ import StatCard from "./ui/StatCard";
 import FilterButtons from "./ui/FilterButtons";
 import TransactionTypeBadge from "./ui/TransactionTypeBadge";
 import EditButton from "./ui/EditButton";
+import EmptyState from "./ui/EmptyState";
 import {
   formatCurrency,
   formatQuantity,
@@ -56,7 +57,7 @@ export default function Dashboard() {
   const [hideValues, setHideValues] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [filterType, setFilterType] = useState("All");
-  const { sortConfig: txSortConfig, handleSort: handleTxSort, sortData } = useSort({ key: "date", direction: "desc" });
+  const { sortConfig: txSortConfig, handleSort: handleTxSort, sortData, renderSortArrow: renderTxSortArrow } = useSort({ key: "date", direction: "desc" });
 
   // portfolio calculations
   const totalValue = useMemo(() => portfolioData.reduce((sum, a) => sum + a.totalValue, 0), [portfolioData]);
@@ -109,11 +110,6 @@ export default function Dashboard() {
     });
   }, [transactions, filterType, sortData]);
 
-  // sort arrow helper
-  const renderSortArrow = (key) => {
-      if (txSortConfig.key !== key) return null;
-    return <span className="ml-1">{txSortConfig.direction === "asc" ? "▲" : "▼"}</span>;
-  };
 
   // filter portfolio data
   const filteredPortfolioData = useMemo(() => {
@@ -285,7 +281,7 @@ export default function Dashboard() {
                         className={`py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] hover:text-white ${col.align === "right" ? "text-right" : ""}`}
                         onClick={() => handleTxSort(col.key)}
                       >
-                        {col.label} {renderSortArrow(col.key)}
+                        {col.label} {renderTxSortArrow(col.key)}
                     </th>
                     ))}
                     <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Actions</th>
@@ -293,11 +289,7 @@ export default function Dashboard() {
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)]">
                   {allTransactionsSorted.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="text-center text-[var(--text-secondary)] align-middle" style={{ height: '400px' }}>
-                        No transactions found.
-                      </td>
-                    </tr>
+                    <EmptyState message="No transactions found." colSpan={7} />
                   ) : (
                     allTransactionsSorted.map((tx) => (
                       <tr key={tx.id} className="hover:bg-[var(--bg-card-hover)] transition-colors">

@@ -2,6 +2,7 @@
 // uses centralized caching utilities for localStorage
 
 import { getFromCache, setToCache, getAnyCached, getCachedBatch, getSimpleCache, setSimpleCache } from './cache';
+import { CRYPTO_MAP } from '../constants/assets';
 
 const TWELVE_DATA_API_KEY = import.meta.env.VITE_TWELVE_DATA_API_KEY;
 const COINGECKO_API_KEY = import.meta.env.VITE_COINGECKO_API_KEY;
@@ -9,20 +10,6 @@ const COINGECKO_API_KEY = import.meta.env.VITE_COINGECKO_API_KEY;
 const CACHE_KEY_STOCKS = "portfolio_price_cache_stocks";
 const CACHE_KEY_CRYPTO = "portfolio_price_cache_crypto";
 const CRYPTO_INFO_CACHE_KEY = "portfolio_crypto_info_cache";
-
-// crypto ticker to CoinGecko ID mapping
-const CRYPTO_MAP = {
-  BTC: { id: "bitcoin", logo: "https://assets.coingecko.com/coins/images/1/large/bitcoin.png" },
-  ETH: { id: "ethereum", logo: "https://assets.coingecko.com/coins/images/279/large/ethereum.png" },
-  SOL: { id: "solana", logo: "https://assets.coingecko.com/coins/images/4128/large/solana.png" },
-  BNB: { id: "binancecoin", logo: "https://assets.coingecko.com/coins/images/825/small/binance-coin-logo.png" },
-  XRP: { id: "ripple", logo: "https://assets.coingecko.com/coins/images/44/small/xrp-symbol-white-128.png" },
-  ADA: { id: "cardano", logo: "https://assets.coingecko.com/coins/images/975/small/cardano.png" },
-  AVAX: { id: "avalanche-2", logo: "https://assets.coingecko.com/coins/images/12559/small/coin-round-red.png" },
-  DOGE: { id: "dogecoin", logo: "https://assets.coingecko.com/coins/images/5/small/dogecoin.png" },
-  DOT: { id: "polkadot", logo: "https://assets.coingecko.com/coins/images/12171/small/polkadot.png" },
-  LINK: { id: "chainlink", logo: "https://assets.coingecko.com/coins/images/877/small/chainlink-new-logo.png" },
-};
 
 // generate deterministic color from ticker for avatar
 const getTickerColor = (ticker) => {

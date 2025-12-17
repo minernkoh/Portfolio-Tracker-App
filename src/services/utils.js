@@ -96,13 +96,13 @@ export const truncateName = (name, maxLength = 30) => {
 // accepts either: 
 // - a full datetime string like "2024-01-15T14:30:00Z"
 // - separate date and time parameters like ("2024-01-15", "14:30")
-// example: formatDateTime("2024-01-15", "14:30") returns "2024-01-15 14:30"
+// example: formatDateTime("2024-01-15", "14:30") returns "2024-01-15, 14:30"
 export const formatDateTime = (dateString, timeString) => {
   if (!dateString) return "";
   
   // if timeString is provided as second argument, combine them
   if (timeString) {
-    return `${dateString} ${timeString}`;
+    return `${dateString}, ${timeString}`;
   }
   
   // check if dateString already contains time (ISO format with T)

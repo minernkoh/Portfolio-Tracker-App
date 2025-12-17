@@ -182,7 +182,7 @@ export const fetchTransactions = async () => {
       return {
         id: record.id, // unique id from airtable
         ticker: fields.Ticker || "",
-        type: fields.Type || "Buy",
+        type: fields["Order Type"] || "Buy",
         quantity: quantity,
         price: price, // use the price from Airtable
         date: date, // date portion (YYYY-MM-DD)

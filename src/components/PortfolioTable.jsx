@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { PlusIcon, DotsThreeIcon, TrashIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
 import { formatCurrency, formatQuantity, truncateName, calculatePnLPercentage, format24hChange } from '../services/utils';
 import AssetLogo from './ui/AssetLogo';
+import EmptyState from './ui/EmptyState';
 import { useSort } from '../hooks/useSort';
 import { useClickOutside } from '../hooks/useClickOutside';
 
@@ -76,11 +77,7 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
             {sortedData.length === 0 ? (
-              <tr>
-                <td colSpan="7" className="py-12 text-center text-[var(--text-secondary)]">
-                  No assets in portfolio. Add a transaction to get started.
-                </td>
-              </tr>
+              <EmptyState message="No assets in portfolio. Add a transaction to get started." colSpan={7} />
             ) : (
               sortedData.map((asset) => (
                 <AssetRow

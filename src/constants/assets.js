@@ -1,5 +1,6 @@
 // centralized list of popular assets for autocomplete
 // used in TransactionFormModal for ticker suggestions
+// also contains crypto ID mappings for CoinGecko API
 
 export const POPULAR_STOCKS = [
   { ticker: "AAPL", name: "Apple Inc.", type: "Stock" },
@@ -15,56 +16,30 @@ export const POPULAR_STOCKS = [
   { ticker: "JPM", name: "JPMorgan Chase", type: "Stock" },
 ];
 
-export const POPULAR_CRYPTO = [
-  {
-    ticker: "BTC",
-    name: "Bitcoin",
+// crypto ticker to CoinGecko ID mapping (used by api.js for price fetching)
+// consolidates data that was previously duplicated in api.js
+export const CRYPTO_MAP = {
+  BTC: { id: "bitcoin", name: "Bitcoin", logo: "https://assets.coingecko.com/coins/images/1/large/bitcoin.png" },
+  ETH: { id: "ethereum", name: "Ethereum", logo: "https://assets.coingecko.com/coins/images/279/large/ethereum.png" },
+  SOL: { id: "solana", name: "Solana", logo: "https://assets.coingecko.com/coins/images/4128/large/solana.png" },
+  BNB: { id: "binancecoin", name: "Binance Coin", logo: "https://assets.coingecko.com/coins/images/825/small/binance-coin-logo.png" },
+  XRP: { id: "ripple", name: "XRP", logo: "https://assets.coingecko.com/coins/images/44/small/xrp-symbol-white-128.png" },
+  ADA: { id: "cardano", name: "Cardano", logo: "https://assets.coingecko.com/coins/images/975/small/cardano.png" },
+  AVAX: { id: "avalanche-2", name: "Avalanche", logo: "https://assets.coingecko.com/coins/images/12559/small/coin-round-red.png" },
+  DOGE: { id: "dogecoin", name: "Dogecoin", logo: "https://assets.coingecko.com/coins/images/5/small/dogecoin.png" },
+  DOT: { id: "polkadot", name: "Polkadot", logo: "https://assets.coingecko.com/coins/images/12171/small/polkadot.png" },
+  LINK: { id: "chainlink", name: "Chainlink", logo: "https://assets.coingecko.com/coins/images/877/small/chainlink-new-logo.png" },
+};
+
+// popular crypto for autocomplete dropdown (derived from CRYPTO_MAP)
+export const POPULAR_CRYPTO = Object.entries(CRYPTO_MAP)
+  .filter(([ticker]) => ["BTC", "ETH", "SOL", "BNB", "AVAX", "DOGE", "DOT", "LINK"].includes(ticker))
+  .map(([ticker, data]) => ({
+    ticker,
+    name: data.name,
     type: "Crypto",
-    logo: "https://assets.coingecko.com/coins/images/1/small/bitcoin.png",
-  },
-  {
-    ticker: "ETH",
-    name: "Ethereum",
-    type: "Crypto",
-    logo: "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
-  },
-  {
-    ticker: "SOL",
-    name: "Solana",
-    type: "Crypto",
-    logo: "https://assets.coingecko.com/coins/images/4128/small/solana.png",
-  },
-  {
-    ticker: "BNB",
-    name: "Binance Coin",
-    type: "Crypto",
-    logo: "https://assets.coingecko.com/coins/images/825/small/binance-coin-logo.png",
-  },
-  {
-    ticker: "AVAX",
-    name: "Avalanche",
-    type: "Crypto",
-    logo: "https://assets.coingecko.com/coins/images/12559/small/coin-round-red.png",
-  },
-  {
-    ticker: "DOGE",
-    name: "Dogecoin",
-    type: "Crypto",
-    logo: "https://assets.coingecko.com/coins/images/5/small/dogecoin.png",
-  },
-  {
-    ticker: "DOT",
-    name: "Polkadot",
-    type: "Crypto",
-    logo: "https://assets.coingecko.com/coins/images/12171/small/polkadot.png",
-  },
-  {
-    ticker: "LINK",
-    name: "Chainlink",
-    type: "Crypto",
-    logo: "https://assets.coingecko.com/coins/images/877/small/chainlink-new-logo.png",
-  },
-];
+    logo: data.logo,
+  }));
 
 // combines both into a single array
 export const SEARCH_ASSETS = [...POPULAR_STOCKS, ...POPULAR_CRYPTO];
