@@ -56,7 +56,7 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
   return (
     <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
+        <table className="w-full text-left border-collapse" style={{ tableLayout: 'auto' }}>
           <thead>
             <tr className="border-b border-[var(--border-subtle)] cursor-pointer select-none">
               {COLUMNS.map((col) => (
@@ -64,7 +64,8 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                   key={col.key}
                   className={`py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] hover:text-white transition-colors ${
                     col.align === 'right' ? 'text-right' : ''
-                  }`}
+                  } ${col.key === 'totalValue' ? 'min-w-[140px] whitespace-nowrap' : ''}`}
+                  style={col.key === 'totalValue' ? { minWidth: '140px' } : {}}
                   onClick={() => handleSort(col.key)}
                 >
                   <div className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
@@ -163,11 +164,11 @@ function AssetRow({
       </td>
 
       {/* market value */}
-      <td className="py-4 px-6 text-right">
-        <div className="text-sm font-bold text-[var(--text-primary)] whitespace-nowrap">
+      <td className="py-4 px-6 text-right" style={{ minWidth: '140px' }}>
+        <div className="text-sm font-bold text-[var(--text-primary)]" style={{ whiteSpace: 'nowrap' }}>
           {formatCurrency(asset.totalValue, hideValues)}
         </div>
-        <div className="text-xs text-[var(--text-secondary)] whitespace-nowrap">
+        <div className="text-xs text-[var(--text-secondary)]" style={{ whiteSpace: 'nowrap' }}>
           {formatQuantity(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
         </div>
       </td>
