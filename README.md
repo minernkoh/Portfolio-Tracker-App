@@ -2,6 +2,8 @@
 
 A modern investment portfolio tracker built with React. Track your stocks and cryptocurrencies in one place with real-time price updates, visual analytics, and comprehensive transaction management. The app calculates your profit/loss using industry-standard FIFO (First In, First Out) cost basis methodology.
 
+![image of portfolio tracker](images/portfolio-tracker_image.png)
+
 ## ✨ Features
 
 - **Price Tracking** - Stock and crypto prices with 24h change indicators (auto-refreshes every 5 minutes)
@@ -58,7 +60,7 @@ src/
 │       ├── AssetDropdown.jsx   # Asset autocomplete dropdown
 │       ├── StatCard.jsx        # Metric display card
 │       ├── AssetLogo.jsx       # Logo with fallback
-│       ├── Button.jsx          # Button with variants (primary, secondary)
+│       ├── Button.jsx          # Button component with primary variant
 │       ├── IconButton.jsx      # Icon button with variants (edit, delete, add, more, close)
 │       ├── TransactionTypeBadge.jsx # Buy/Sell badge
 │       ├── LoadingState.jsx    # Loading indicator

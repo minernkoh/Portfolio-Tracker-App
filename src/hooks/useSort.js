@@ -7,6 +7,8 @@ export function useSort(initialConfig = { key: null, direction: "asc" }) {
   const [sortConfig, setSortConfig] = useState(initialConfig);
 
   // toggle sort direction or set new sort key
+  // if clicking same column: toggle asc/desc
+  // if clicking different column: set to asc
   const handleSort = useCallback((key) => {
     setSortConfig((current) => ({
       key,
@@ -53,11 +55,8 @@ export function useSort(initialConfig = { key: null, direction: "asc" }) {
   );
 
   return {
-    sortConfig,
     handleSort,
     sortData,
     renderSortArrow,
   };
 }
-
-export default useSort;

@@ -8,9 +8,6 @@ const VARIANTS = {
   primary: {
     base: 'bg-[var(--accent-blue)] text-white font-bold rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50',
   },
-  secondary: {
-    base: 'bg-[var(--bg-card)] text-white font-bold rounded-lg border border-[var(--border-subtle)] hover:bg-[var(--bg-card-hover)] transition-colors disabled:opacity-50',
-  },
 };
 
 const ICONS = {

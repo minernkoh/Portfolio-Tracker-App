@@ -64,18 +64,22 @@ if (typeof window !== 'undefined') {
 }
 
 // generate deterministic color from ticker for avatar
+// same ticker always gets the same color (useful for fallback avatars)
 const getTickerColor = (ticker) => {
+  // simple hash function to convert ticker string to number
   let hash = 0;
   for (let i = 0; i < ticker.length; i++) {
     hash = ticker.charCodeAt(i) + ((hash << 5) - hash);
   }
   
+  // convert hash to hue (0-360 degrees)
   const hue = Math.abs(hash) % 360;
-  const h = hue / 360, s = 0.7, l = 0.5;
+  const h = hue / 360, s = 0.7, l = 0.5; // HSL color values
   
+  // convert HSL to RGB
   let r, g, b;
   if (s === 0) {
-    r = g = b = l;
+    r = g = b = l; // grayscale
   } else {
     const hue2rgb = (p, q, t) => {
       if (t < 0) t += 1;
@@ -92,6 +96,7 @@ const getTickerColor = (ticker) => {
     b = hue2rgb(p, q, h - 1/3);
   }
   
+  // convert RGB to hex string
   const toHex = (c) => Math.round(c * 255).toString(16).padStart(2, '0');
   return `${toHex(r)}${toHex(g)}${toHex(b)}`;
 };
@@ -118,25 +123,27 @@ const parseStockData = (data) => {
   return {
     currentPrice: parseFloat(data.close),
     priceChange24h: parseFloat(data.percent_change || 0),
-    high: parseFloat(data.high || 0),
-    low: parseFloat(data.low || 0),
-    volume: parseInt(data.volume || 0),
     name: data.name || null,
   };
 };
 
 // fetch prices for multiple stocks using batch request (1 API call for all symbols)
+// this minimizes API calls and respects rate limits
 export const fetchStockPrices = async (tickers = []) => {
   if (!tickers?.length) return {};
 
+  // remove duplicates and empty values
   const uniqueTickers = [...new Set(tickers)].filter((t) => t?.trim());
+  // check cache - returns both cached data and list of tickers needing API fetch
   const { cachedMap, uncachedTickers } = getCachedBatch(CACHE_KEY_STOCKS, uniqueTickers);
   
+  // start with cached data (add logos)
   const priceMap = {};
   Object.keys(cachedMap).forEach((ticker) => {
     priceMap[ticker] = { ...cachedMap[ticker], logo: getStockLogo(ticker) };
   });
 
+  // if all tickers are cached, return early (no API call needed)
   if (uncachedTickers.length === 0) {
     if (Object.keys(cachedMap).length > 0) {
       logApiRequest('twelveData', Object.keys(cachedMap), true);
@@ -156,7 +163,8 @@ export const fetchStockPrices = async (tickers = []) => {
   }
 
   try {
-    // batch request: fetch all symbols in one API call
+    // batch request: fetch all uncached symbols in one API call
+    // this is more efficient than individual requests and reduces rate limit usage
     const symbolsParam = uncachedTickers.join(',');
     logApiRequest('twelveData', uncachedTickers);
     const response = await fetch(
@@ -164,10 +172,11 @@ export const fetchStockPrices = async (tickers = []) => {
     );
 
     if (!response.ok) {
+      // handle rate limiting or API errors gracefully
       if (isRateLimited(response)) {
         console.warn("TwelveData rate limit hit, using cache");
       }
-      // fall back to cached data
+      // fall back to cached data (even if expired) or defaults
       uncachedTickers.forEach((ticker) => {
         const cached = getAnyCached(CACHE_KEY_STOCKS, ticker);
         priceMap[ticker] = cached 
@@ -179,16 +188,18 @@ export const fetchStockPrices = async (tickers = []) => {
 
     const data = await response.json();
 
-    // handle response format:
+    // handle response format differences:
     // - single symbol: { close: "150", name: "Apple", ... }
     // - multiple symbols: { "AAPL": { close: "150", ... }, "MSFT": { close: "380", ... } }
     const isSingleSymbol = uncachedTickers.length === 1;
 
+    // process each ticker's response
     uncachedTickers.forEach((ticker) => {
       const stockData = isSingleSymbol ? data : data[ticker];
       const parsed = parseStockData(stockData);
 
       if (parsed) {
+        // valid data - add to price map and cache it
         priceMap[ticker] = {
           currentPrice: parsed.currentPrice,
           priceChange24h: parsed.priceChange24h,
@@ -197,7 +208,7 @@ export const fetchStockPrices = async (tickers = []) => {
         };
         setToCache(CACHE_KEY_STOCKS, ticker, parsed);
       } else {
-        // use cached data or default
+        // invalid/empty response - use cached data or default
         const cached = getAnyCached(CACHE_KEY_STOCKS, ticker);
         priceMap[ticker] = cached 
           ? { ...cached, logo: getStockLogo(ticker) }
@@ -207,6 +218,7 @@ export const fetchStockPrices = async (tickers = []) => {
 
     return priceMap;
   } catch (error) {
+    // network error or other exception - fall back to cache
     console.error("Error fetching stock prices:", error);
     uncachedTickers.forEach((ticker) => {
       const cached = getAnyCached(CACHE_KEY_STOCKS, ticker);
@@ -275,12 +287,15 @@ const populateCryptoLogos = (priceMap) => {
 };
 
 // fetch prices for multiple cryptocurrencies
+// CoinGecko requires coin IDs (not tickers), so tickers are mapped to IDs first
 export const fetchCryptoPrices = async (cryptoTickers = []) => {
   if (!cryptoTickers?.length) return {};
 
+  // check cache first
   const { cachedMap, uncachedTickers } = getCachedBatch(CACHE_KEY_CRYPTO, cryptoTickers);
   let priceMap = { ...cachedMap };
 
+  // if all cached, return early (add logos and return)
   if (uncachedTickers.length === 0) {
     if (Object.keys(cachedMap).length > 0) {
       logApiRequest('coinGecko', Object.keys(cachedMap), true);
@@ -289,19 +304,21 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
   }
 
   try {
-    // map tickers to CoinGecko IDs
+    // map tickers to CoinGecko IDs (required for price API)
     const tickerToIdMap = {};
     const tickersNeedingSearch = [];
 
+    // check if ticker is in known crypto map
     for (const ticker of uncachedTickers) {
       if (CRYPTO_MAP[ticker]?.id) {
         tickerToIdMap[ticker] = CRYPTO_MAP[ticker].id;
       } else {
+        // unknown ticker - need to search CoinGecko
         tickersNeedingSearch.push(ticker);
       }
     }
 
-    // search for unknown tickers
+    // search CoinGecko for unknown tickers to get their IDs
     if (tickersNeedingSearch.length > 0) {
       await Promise.all(
         tickersNeedingSearch.map(async (ticker) => {
@@ -311,9 +328,11 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
       );
     }
 
+    // if no valid IDs found, return cached data with logos
     const cryptoIds = Object.values(tickerToIdMap).filter(Boolean);
     if (cryptoIds.length === 0) return populateCryptoLogos(priceMap);
 
+    // batch fetch prices for all crypto IDs (one API call)
     const headers = COINGECKO_API_KEY ? { "x-cg-demo-api-key": COINGECKO_API_KEY } : {};
     logApiRequest('coinGecko', uncachedTickers);
     const response = await fetch(
@@ -322,6 +341,7 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
     );
 
     if (!response.ok) {
+      // API error - fall back to cached data
       uncachedTickers.forEach((ticker) => {
         const cached = getAnyCached(CACHE_KEY_CRYPTO, ticker);
         if (cached) priceMap[ticker] = cached;
@@ -332,9 +352,11 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
     const cryptoData = await response.json();
     const infoCache = getSimpleCache(CRYPTO_INFO_CACHE_KEY);
 
+    // process each ticker's price data
     uncachedTickers.forEach((ticker) => {
       const coinGeckoId = tickerToIdMap[ticker] || CRYPTO_MAP[ticker]?.id;
       if (coinGeckoId && cryptoData[coinGeckoId]) {
+        // valid price data received
         const liveData = cryptoData[coinGeckoId];
         const cryptoInfo = infoCache[ticker] || CRYPTO_MAP[ticker];
         
@@ -345,8 +367,10 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
           logo: cryptoInfo?.logo || getCryptoLogo(ticker),
         };
         priceMap[ticker] = priceData;
+        // cache price data (but not name/logo - those are in separate cache)
         setToCache(CACHE_KEY_CRYPTO, ticker, { currentPrice: priceData.currentPrice, priceChange24h: priceData.priceChange24h });
       } else {
+        // no price data for this ticker - use cached or skip
         const cached = getAnyCached(CACHE_KEY_CRYPTO, ticker);
         if (cached) priceMap[ticker] = cached;
       }
@@ -354,6 +378,7 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
 
     return populateCryptoLogos(priceMap);
   } catch (error) {
+    // network error - fall back to cached data
     console.error("Error fetching crypto prices:", error);
     uncachedTickers.forEach((ticker) => {
       const cached = getAnyCached(CACHE_KEY_CRYPTO, ticker);

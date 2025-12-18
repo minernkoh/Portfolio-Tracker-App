@@ -4,6 +4,7 @@
 const DEFAULT_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // generic cache getter with expiration check
+// returns cached data only if it's still fresh (within duration)
 export const getFromCache = (key, ticker, duration = DEFAULT_CACHE_DURATION) => {
   try {
     const cached = localStorage.getItem(key);
@@ -13,6 +14,7 @@ export const getFromCache = (key, ticker, duration = DEFAULT_CACHE_DURATION) => 
     const tickerData = cacheData[ticker];
     if (!tickerData) return null;
 
+    // check if cache is still fresh
     const cacheAge = Date.now() - tickerData.timestamp;
     return cacheAge < duration ? tickerData.data : null;
   } catch {
@@ -47,6 +49,8 @@ export const getAnyCached = (key, ticker) => {
 };
 
 // batch check cache for multiple tickers
+// returns both cached data and list of tickers that need API fetch
+// enables batching API requests for only uncached tickers
 export const getCachedBatch = (key, tickers, duration = DEFAULT_CACHE_DURATION) => {
   const cachedMap = {};
   const uncachedTickers = [];

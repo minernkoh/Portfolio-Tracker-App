@@ -26,7 +26,9 @@ export default function FormInput({
 }) {
   const hasError = !!error;
   
+  // base input styles (applied to all inputs)
   const baseInputClass = `w-full bg-[var(--bg-app)] border rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none transition-colors disabled:opacity-50`;
+  // conditional border color based on error state
   const borderClass = hasError
     ? 'border-red-500 focus:border-red-500'
     : 'border-[var(--border-subtle)] focus:border-[var(--text-secondary)]';

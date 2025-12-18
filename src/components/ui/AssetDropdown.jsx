@@ -7,13 +7,12 @@ import { getStockLogo } from '../../services/api';
 export default function AssetDropdown({ 
   assets, 
   onSelect, 
-  title = null,
-  className = '' 
+  title = null
 }) {
   if (!assets || assets.length === 0) return null;
 
   return (
-    <ul className={`absolute z-50 left-0 right-0 top-full mt-1 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl max-h-48 overflow-y-auto ${className}`}>
+    <ul className="absolute z-50 left-0 right-0 top-full mt-1 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl max-h-48 overflow-y-auto">
       {title && (
         <li className="px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] border-b border-[var(--border-subtle)] bg-[var(--bg-app)] sticky top-0">
           {title}
@@ -30,7 +29,9 @@ export default function AssetDropdown({
   );
 }
 
+// individual dropdown item component
 function AssetDropdownItem({ asset, onSelect }) {
+  // stocks use generated logo, crypto uses provided logo
   const logo = asset.type === "Stock" ? getStockLogo(asset.ticker) : asset.logo;
   
   return (

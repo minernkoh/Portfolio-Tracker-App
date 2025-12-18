@@ -9,7 +9,6 @@ export default function StatCard({
   value,
   valueFormatted,
   subtitle,
-  subtitleFormatted,
   isPositive,
   hideValues = false,
 }) {
@@ -37,12 +36,7 @@ export default function StatCard({
   }
 
   // handle subtitle
-  let displaySubtitle;
-  if (subtitleFormatted !== undefined) {
-    displaySubtitle = subtitleFormatted;
-  } else if (subtitle !== undefined) {
-    displaySubtitle = subtitle;
-  }
+  const displaySubtitle = subtitle;
 
   return (
     <div className="bg-[var(--bg-card)] p-4 rounded-xl border border-[var(--border-subtle)]">

@@ -43,9 +43,9 @@ export default function AssetDetails() {
   const deleteTransactionMutation = useDeleteTransaction();
   
   // sorting for transaction history table
-  const { sortConfig, handleSort, sortData, renderSortArrow } = useSort({ key: 'date', direction: 'desc' });
+  const { handleSort, sortData, renderSortArrow } = useSort({ key: 'date', direction: 'desc' });
   
-  // sorted transactions
+  // sort transactions with custom comparator (same logic as Dashboard)
   const sortedTransactions = useMemo(() => {
     if (!asset?.transactions) return [];
     return sortData(asset.transactions, (a, b, key, direction) => {

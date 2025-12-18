@@ -6,7 +6,7 @@ import React from 'react';
 // size mapping for Tailwind classes (Tailwind doesn't support dynamic classes)
 const sizeClasses = {
   8: 'w-8 h-8',
-  16: 'w-16 h-16',
+  12: 'w-12 h-12',
 };
 
 export default function AssetLogo({ logo, ticker, name, size = 8, className = "" }) {

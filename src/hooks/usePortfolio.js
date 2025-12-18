@@ -22,7 +22,7 @@ export const queryKeys = {
 export function useAirtableStatus() {
   const hasAirtable = !!(
     // double bang operator - used to convert any value to a boolean
-    // it is needed because we do not want the API key to be revealed
+    // prevents API key from being revealed
     (
       import.meta.env.VITE_AIRTABLE_API_KEY &&
       import.meta.env.VITE_AIRTABLE_BASE_ID
@@ -47,20 +47,22 @@ export function useTransactions() {
 }
 
 // hook to fetch prices for all assets
-// separates stocks from crypto and fetches from appropriate APIs
+// separates stocks from crypto and fetches from appropriate APIs (TwelveData vs CoinGecko)
 export function usePrices(transactions = []) {
-  // separate stock and crypto tickers - memoize to prevent unnecessary re-renders
+  // extract unique stock tickers - memoized to prevent unnecessary re-renders
+  // filters out crypto, maps to tickers, removes duplicates with Set
   const stockTickers = useMemo(() => {
     return [
       ...new Set(
         transactions
           .filter((tx) => normalizeAssetType(tx.assetType) !== "Crypto")
           .map((tx) => tx.ticker)
-          .filter(Boolean)
+          .filter(Boolean) // remove empty/null tickers
       ),
     ];
   }, [transactions]);
 
+  // extract unique crypto tickers - same pattern as stocks
   const cryptoTickers = useMemo(() => {
     return [
       ...new Set(
@@ -72,7 +74,8 @@ export function usePrices(transactions = []) {
     ];
   }, [transactions]);
 
-  // create stable query keys
+  // create stable query keys - memoized to prevent unnecessary query refetches
+  // query keys must be stable (same reference) for TanStack Query to cache properly
   const stockQueryKey = useMemo(
     () => queryKeys.stockPrices(stockTickers),
     [stockTickers]
@@ -82,25 +85,26 @@ export function usePrices(transactions = []) {
     [cryptoTickers]
   );
 
-  // fetch stock prices
+  // fetch stock prices from TwelveData API
   const stocksQuery = useQuery({
     queryKey: stockQueryKey,
     queryFn: () => fetchStockPrices(stockTickers),
-    enabled: stockTickers.length > 0,
+    enabled: stockTickers.length > 0, // only fetch if stock tickers exist
     staleTime: 2 * 60 * 1000, // 2 minutes - prices change frequently
     refetchInterval: 5 * 60 * 1000, // auto-refresh every 5 minutes
   });
 
-  // fetch crypto prices
+  // fetch crypto prices from CoinGecko API
   const cryptoQuery = useQuery({
     queryKey: cryptoQueryKey,
     queryFn: () => fetchCryptoPrices(cryptoTickers),
-    enabled: cryptoTickers.length > 0,
+    enabled: cryptoTickers.length > 0, // only fetch if crypto tickers exist
     staleTime: 2 * 60 * 1000, // 2 minutes
     refetchInterval: 5 * 60 * 1000, // auto-refresh every 5 minutes
   });
 
-  // combine prices from both queries
+  // combine prices from both queries into a single object
+  // spread operator merges stock and crypto prices (tickers won't overlap)
   const prices = useMemo(
     () => ({
       ...(stocksQuery.data || {}),
@@ -109,7 +113,8 @@ export function usePrices(transactions = []) {
     [stocksQuery.data, cryptoQuery.data]
   );
 
-  // determine loading state - only loading if we have tickers to fetch
+  // determine loading state - only loading if tickers exist to fetch
+  // if no tickers, queries are disabled and won't show loading
   const isLoading =
     (stockTickers.length > 0 && stocksQuery.isLoading) ||
     (cryptoTickers.length > 0 && cryptoQuery.isLoading);
@@ -155,26 +160,8 @@ export function useAddTransaction() {
         `Failed to add transaction: ${err.message || "Unknown error"}`
       );
     },
-    onSuccess: (data) => {
-      // check if asset class wasn't set in Airtable (but was preserved in app state)
-      if (data?._assetClassNotSet) {
-        toast.success("Transaction added successfully", {
-          duration: 5000,
-        });
-        toast(
-          "Note: Asset class couldn't be set in Airtable due to API permissions, but it's preserved in the app.",
-          {
-            icon: "⚠️",
-            duration: 6000,
-            style: {
-              background: '#f59e0b',
-              color: '#fff',
-            },
-          }
-        );
-      } else {
-        toast.success("Transaction added successfully");
-      }
+    onSuccess: () => {
+      toast.success("Transaction added successfully");
     },
     onSettled: () => {
       // refetch to get the real data

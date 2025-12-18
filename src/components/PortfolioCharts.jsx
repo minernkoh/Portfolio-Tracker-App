@@ -8,7 +8,8 @@ import {
 import { formatCurrency, calculateValue } from "../services/utils";
 import ButtonGroup from "./ui/ButtonGroup";
 
-const CHART_COLORS = ["#3b82f6", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899", "#6366f1"];
+const CHART_COLORS = ["#3b82f6", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"];
+const OTHERS_COLOR = "#9ca3af"; // light grey for "Others" category
 const TIME_PERIODS = ["7d", "1m", "3m", "ytd", "1y", "all"];
 
 // get cutoff date for time period filtering
@@ -42,54 +43,62 @@ const PerformanceTooltip = ({ active, payload, hideValues }) => {
 };
 
 // process transactions to calculate portfolio history with FIFO
+// builds a timeline of portfolio value over time for the performance chart
 const calculateHistoryData = (transactions, prices, portfolioData, totalValue, timePeriod) => {
   if (!transactions?.length) return [];
 
-  // sort and group transactions by date
+  // sort transactions chronologically and group by date
+  // grouping by date enables processing all transactions on the same day together
   const sortedTxs = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
   const txsByDate = new Map();
   
   sortedTxs.forEach((tx) => {
+    // normalize date to midnight (remove time component) for grouping
     const dateKey = new Date(new Date(tx.date).toDateString()).getTime();
     if (!txsByDate.has(dateKey)) txsByDate.set(dateKey, []);
     txsByDate.get(dateKey).push(tx);
   });
 
   const dataPoints = [];
-  const assetMap = {};
+  const assetMap = {}; // track holdings per asset during transaction processing
 
-  // process each date's transactions
+  // process each date's transactions chronologically
   Array.from(txsByDate.entries())
-    .sort((a, b) => a[0] - b[0])
+    .sort((a, b) => a[0] - b[0]) // ensure dates are in order
     .forEach(([dateKey, dateTxs]) => {
+      // process all transactions for this date
       dateTxs.forEach((tx) => {
         if (!assetMap[tx.ticker]) {
           assetMap[tx.ticker] = { quantity: 0, totalCost: 0, buyQueue: [] };
         }
 
         if (tx.type.toLowerCase() === "buy") {
+          // add to holdings and FIFO queue
           assetMap[tx.ticker].quantity += tx.quantity;
           assetMap[tx.ticker].totalCost += tx.quantity * tx.price;
           assetMap[tx.ticker].buyQueue.push({ quantity: tx.quantity, price: tx.price });
         } else {
-          // fifo sell
+          // FIFO sell - sell oldest shares first
           let remaining = tx.quantity;
           let costSold = 0;
           
+          // go through buy queue (oldest first)
           for (const buy of assetMap[tx.ticker].buyQueue) {
             if (remaining <= 0 || buy.quantity <= 0) continue;
             const shares = Math.min(remaining, buy.quantity);
             costSold += shares * buy.price;
-            buy.quantity -= shares;
+            buy.quantity -= shares; // reduce available shares from this buy
             remaining -= shares;
           }
           
+          // update holdings after sell
           assetMap[tx.ticker].quantity -= tx.quantity;
-          assetMap[tx.ticker].totalCost -= costSold;
+          assetMap[tx.ticker].totalCost -= costSold; // remove cost basis of sold shares
         }
       });
 
-      // calculate portfolio value at this date
+      // calculate portfolio value at this point in time
+      // use current prices (not historical) - this is a simplification
       let portfolioValue = 0, costBasis = 0;
       Object.entries(assetMap).forEach(([ticker, asset]) => {
         if (asset.quantity > 0) {
@@ -98,6 +107,7 @@ const calculateHistoryData = (transactions, prices, portfolioData, totalValue, t
         }
       });
 
+      // format date for display
       const date = new Date(dateKey);
       dataPoints.push({
         date: date.toLocaleDateString([], { 
@@ -111,13 +121,13 @@ const calculateHistoryData = (transactions, prices, portfolioData, totalValue, t
       });
     });
 
-  // add current point
+  // add current point (end of timeline)
   if (dataPoints.length > 0) {
     const currentCostBasis = portfolioData.reduce((sum, a) => sum + a.totalCost, 0);
     dataPoints.push({ date: "Now", value: totalValue, costBasis: currentCostBasis, timestamp: Date.now() });
   }
 
-  // filter by time period
+  // filter by selected time period
   if (timePeriod !== "all") {
     const cutoff = getCutoffDate(timePeriod);
     if (cutoff) return dataPoints.filter((p) => p.timestamp >= cutoff.getTime());
@@ -130,9 +140,6 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
   const [timePeriod, setTimePeriod] = useState("all");
 
   const totalValue = portfolioData.reduce((acc, curr) => acc + curr.totalValue, 0);
-  const totalPnL = portfolioData.reduce((sum, a) => sum + a.pnl, 0);
-  const isPositiveTrend = totalPnL >= 0;
-  const chartColor = isPositiveTrend ? "#22c55e" : "#ef4444";
 
   const historyData = useMemo(
     () => calculateHistoryData(transactions, prices, portfolioData, totalValue, timePeriod),
@@ -152,9 +159,11 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
     return [...top7, { name: "Others", value: others }];
   }, [portfolioData]);
 
+  // determine chart color based on trend for selected time period
   const historicalTrend = historyData.length > 1
     ? historyData[historyData.length - 1].value >= historyData[0].value
-    : isPositiveTrend;
+    : true; // default to positive if no history
+  const chartColor = historicalTrend ? "#22c55e" : "#ef4444";
 
   if (portfolioData.length === 0) {
     return (
@@ -241,8 +250,8 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
                     paddingAngle={3} dataKey="value" stroke="none"
                     style={{ filter: "url(#glow-pie)" }}
                   >
-                    {allocationData.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="rgba(0,0,0,0)" />
+                    {allocationData.map((entry, i) => (
+                      <Cell key={i} fill={entry.name === "Others" ? OTHERS_COLOR : CHART_COLORS[i % CHART_COLORS.length]} stroke="rgba(0,0,0,0)" />
                     ))}
                   </Pie>
                   <Tooltip
@@ -270,22 +279,25 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
           {/* legend */}
           <div className="w-full sm:w-[30%] lg:w-[40%] flex-1 custom-scrollbar" style={{ overflowY: 'auto', paddingLeft: '18px', paddingRight: '10px' }}>
             <div className="space-y-1.5">
-              {allocationData.map((entry, i) => (
-                <div key={entry.name} className="flex items-center justify-between text-xs gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <div className="w-3 h-3 flex items-center justify-center flex-shrink-0" style={{ marginLeft: '-4px', marginRight: '4px' }}>
-                      <div
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length], boxShadow: `0 0 6px ${CHART_COLORS[i % CHART_COLORS.length]}` }}
-                      />
+              {allocationData.map((entry, i) => {
+                const color = entry.name === "Others" ? OTHERS_COLOR : CHART_COLORS[i % CHART_COLORS.length];
+                return (
+                  <div key={entry.name} className="flex items-center justify-between text-xs gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <div className="w-3 h-3 flex items-center justify-center flex-shrink-0" style={{ marginLeft: '-4px', marginRight: '4px' }}>
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }}
+                        />
+                      </div>
+                      <span className="text-[var(--text-secondary)] font-medium text-[11px]" title={entry.name}>{entry.name}</span>
                     </div>
-                    <span className="text-[var(--text-secondary)] font-medium text-[11px]" title={entry.name}>{entry.name}</span>
+                    <span className="text-white font-bold text-[11px] flex-shrink-0">
+                      {hideValues ? "**" : ((entry.value / totalValue) * 100).toFixed(1)}%
+                    </span>
                   </div>
-                  <span className="text-white font-bold text-[11px] flex-shrink-0">
-                    {hideValues ? "**" : ((entry.value / totalValue) * 100).toFixed(1)}%
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

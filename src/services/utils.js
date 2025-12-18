@@ -5,38 +5,38 @@
 // example: formatNumber(1.50000000) returns "1.5"
 export const formatNumber = (value, maxDecimals = 10) => {
   if (value === null || value === undefined || isNaN(value)) return "0";
-  
+
   const num = Number(value);
   if (!isFinite(num)) return String(value);
-  
+
   // handle zero
   if (num === 0) return "0";
-  
+
   // use toFixed to avoid scientific notation, then parse
   // use a higher precision to avoid rounding issues
   const fixedStr = num.toFixed(Math.max(maxDecimals, 15));
-  
+
   // split into integer and decimal parts
   const parts = fixedStr.split(".");
   let integerPart = parts[0];
   let decimalPart = parts[1] || "";
-  
+
   // limit decimal part to maxDecimals
   if (decimalPart.length > maxDecimals) {
     decimalPart = decimalPart.substring(0, maxDecimals);
   }
-  
+
   // remove trailing zeros from decimal part
   decimalPart = decimalPart.replace(/0+$/, "");
-  
+
   // format integer part with thousand separators
   const formattedInteger = Number(integerPart).toLocaleString("en-US");
-  
+
   // return formatted number
   if (decimalPart.length === 0) {
     return formattedInteger;
   }
-  
+
   return `${formattedInteger}.${decimalPart}`;
 };
 
@@ -47,32 +47,32 @@ export const formatNumber = (value, maxDecimals = 10) => {
 // example: formatPriceInput(0.00001234) returns "0.00001234"
 export const formatPriceInput = (price) => {
   if (price === null || price === undefined || isNaN(price)) return "";
-  
+
   const num = Number(price);
   if (num === 0) return "0.00";
-  
+
   // for prices $1 and above, use 2 decimal places
   if (Math.abs(num) >= 1) {
     return num.toFixed(2);
   }
-  
+
   // for prices less than $1, find significant digits
   // convert to string and find the first non-zero digit after decimal
   const str = num.toFixed(12); // high precision to find significant digits
-  const decimalIndex = str.indexOf('.');
-  
+  const decimalIndex = str.indexOf(".");
+
   if (decimalIndex === -1) return num.toFixed(2);
-  
+
   const afterDecimal = str.slice(decimalIndex + 1);
   let firstNonZeroIndex = 0;
-  
+
   for (let i = 0; i < afterDecimal.length; i++) {
-    if (afterDecimal[i] !== '0') {
+    if (afterDecimal[i] !== "0") {
       firstNonZeroIndex = i;
       break;
     }
   }
-  
+
   // show first significant digit + 3 more digits (4 significant figures after first non-zero)
   const decimals = Math.min(firstNonZeroIndex + 4, 10);
   return num.toFixed(decimals);
@@ -82,16 +82,17 @@ export const formatPriceInput = (price) => {
 // example: formatCurrency(1000) returns "$1,000.00"
 // example: formatCurrency(0.001) returns "$0.00"
 export const formatCurrency = (value, hidden = false) => {
-  // privacy feature, for hiding numbers
+  // privacy feature - hide sensitive financial data
   if (hidden) return "****";
 
   if (value === null || value === undefined || isNaN(value)) return "$0.00";
-  
+
   const num = Number(value);
   if (!isFinite(num)) return "$0.00";
-  
+
   // use javascript's built-in number formatter for US dollars
-  // always show exactly 2 decimal places
+  // Intl.NumberFormat handles locale-specific formatting (commas, currency symbol)
+  // always show exactly 2 decimal places for consistency
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -100,25 +101,9 @@ export const formatCurrency = (value, hidden = false) => {
   }).format(num);
 };
 
-// format a quantity (for crypto or stocks) with dynamic decimal places
-// example: formatQuantity(1.5) returns "1.5"
-// example: formatQuantity(0.00012345) returns "0.00012345"
+// format a quantity (for crypto or stocks) with up to 10 decimal places
 export const formatQuantity = (value) => {
   return formatNumber(value, 10);
-};
-
-// format a number as a percentage
-// example: formatPercentage(5) returns "+5.00%"
-export const formatPercentage = (value) => {
-  // use javascript's built-in number formatter for percentages
-  const formatted = new Intl.NumberFormat("en-US", {
-    style: "percent", // format as percentage
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value / 100); // divide by 100 because formatter expects decimal (0.05 = 5%)
-
-  // add + sign if value is positive
-  return value > 0 ? `+${formatted}` : formatted;
 };
 
 // truncate a string to a maximum length and add ellipsis if needed
@@ -131,18 +116,18 @@ export const truncateName = (name, maxLength = 30) => {
 };
 
 // format a date string to show date and time nicely
-// accepts either: 
+// accepts either:
 // - a full datetime string like "2024-01-15T14:30:00Z"
 // - separate date and time parameters like ("2024-01-15", "14:30")
 // example: formatDateTime("2024-01-15", "14:30") returns "2024-01-15, 14:30"
 export const formatDateTime = (dateString, timeString) => {
   if (!dateString) return "";
-  
+
   // if timeString is provided as second argument, combine them
   if (timeString) {
     return `${dateString}, ${timeString}`;
   }
-  
+
   // check if dateString already contains time (ISO format with T)
   if (dateString.includes("T")) {
     try {
@@ -153,14 +138,14 @@ export const formatDateTime = (dateString, timeString) => {
       const day = String(date.getDate()).padStart(2, "0");
       const hours = String(date.getHours()).padStart(2, "0");
       const minutes = String(date.getMinutes()).padStart(2, "0");
-      
+
       return `${year}-${month}-${day} ${hours}:${minutes}`;
     } catch (error) {
       // if parsing fails, try to clean up the string by removing T and Z
       return dateString.replace("T", " ").replace(/Z$/, "").substring(0, 16);
     }
   }
-  
+
   // if no time info, just return the date
   return dateString;
 };
@@ -172,36 +157,28 @@ export const calculateValue = (quantity, price) => {
 
 // calculate unrealized profit or loss
 export const calculateUnrealizedPnL = (quantity, avgPrice, currentPrice) => {
-  const cost = quantity * avgPrice; // what you paid
+  const cost = quantity * avgPrice; // cost basis
   const current = quantity * currentPrice; // what it's worth now
   return current - cost; // profit (positive) or loss (negative)
-};
-
-// get css class name based on whether value is positive, negative, or zero
-// this is used to color numbers green (profit) or red (loss)
-export const getClassByValue = (value) => {
-  if (value > 0) return "text-[var(--accent-success)]"; // green for positive
-  if (value < 0) return "text-[var(--accent-danger)]"; // red for negative
-  return "text-[var(--text-secondary)]"; // gray for zero
 };
 
 // normalize asset type to "Stock" or "Crypto"
 // handles various input formats and normalizes to standard format
 export const normalizeAssetType = (assetType) => {
   if (!assetType) return "Stock";
-  
+
   if (typeof assetType === "string") {
     const normalized = assetType.trim().replace(/\n/g, "").toLowerCase();
     return normalized === "crypto" ? "Crypto" : "Stock";
   }
-  
+
   return "Stock";
 };
 
 // format transaction type to "Buy" or "Sell" with proper capitalization
 export const formatTransactionType = (type) => {
   if (!type) return "Buy";
-  
+
   return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
 };
 
@@ -230,91 +207,108 @@ export const format24hChange = (changePercent) => {
   };
 };
 
-// calculate portfolio data from transactions and prices
-// this combines buy/sell history with current prices to show portfolio value
-// uses FIFO (first in, first out) for sell calculations
+/**
+ * calculate portfolio data from transactions and current prices
+ * uses FIFO (First In, First Out) accounting: oldest shares sold first
+ */
 export const calculatePortfolioData = (transactions, prices) => {
-  // sort transactions by date/time (oldest first) - required for FIFO to work correctly
-  // FIFO needs to process transactions in chronological order to determine which shares were sold
-  // secondary sort: when timestamps are equal, process Buys before Sells (you can't sell what you don't own)
+  // phase 1: sort transactions chronologically (oldest first) - required for FIFO
+  // secondary sort: buys before sells when timestamps are equal
   const sortedTransactions = [...transactions].sort((a, b) => {
-    // combine date and time for accurate sorting
+    // combine date and time for comparison (e.g., "2024-01-15T14:30")
     const dateTimeA = a.time ? `${a.date}T${a.time}` : a.date;
     const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
     const dateA = new Date(dateTimeA);
     const dateB = new Date(dateTimeB);
-    
-    // primary sort: by date/time (ascending - oldest first)
+
+    // primary sort: by date/time (ascending = oldest first)
     if (dateA.getTime() !== dateB.getTime()) {
       return dateA - dateB;
     }
-    
-    // secondary sort: when timestamps are equal, Buys come before Sells
-    // this ensures you can't sell shares you haven't bought yet
-    const typeA = a.type?.toLowerCase() === 'buy' ? 0 : 1;
-    const typeB = b.type?.toLowerCase() === 'buy' ? 0 : 1;
+
+    // secondary sort: buys before sells (cannot sell what is not owned)
+    // convert transaction type to number for sorting:
+    //   - "Buy" → 0 (comes first)
+    //   - "Sell" → 1 (comes after)
+
+    // example: a.type = "Buy"
+    //   step 1: "Buy".toLowerCase() = "buy"
+    //   step 2: "buy" === "buy" = true
+    //   step 3: true ? 0 : 1 = 0
+    //   result: typeA = 0 ✅
+    const typeA = a.type?.toLowerCase() === "buy" ? 0 : 1;
+    const typeB = b.type?.toLowerCase() === "buy" ? 0 : 1;
+
+    // sort by numeric value: negative = A comes first, positive = B comes first, 0 = same order
+    // example: typeA = 0 (Buy), typeB = 1 (Sell) → 0 - 1 = -1 → A comes before B ✅
     return typeA - typeB;
   });
 
-  // group transactions by ticker (asset symbol)
+  // phase 2: process transactions - group by ticker and track holdings
   const assetMap = {};
 
   sortedTransactions.forEach((tx) => {
     const ticker = tx.ticker;
 
-    // if we haven't seen this ticker before, create a new entry
+    // initialize asset entry for new ticker
+    // buyQueue: FIFO queue tracking remaining shares from each buy (oldest first)
     if (!assetMap[ticker]) {
       assetMap[ticker] = {
         ticker: ticker,
         name: tx.name || ticker,
         assetType: normalizeAssetType(tx.assetType),
         transactions: [],
-        totalQuantity: 0,
-        totalCost: 0,
-        // track remaining available shares per buy transaction for FIFO
-        buyQueue: [], // array of {quantity, price, originalQuantity} for each buy
+        totalQuantity: 0, // current holdings
+        totalCost: 0, // cost basis (total money spent)
+        buyQueue: [], // [{quantity, price, originalQuantity}] - oldest buys first
       };
     }
 
-    // add this transaction to the list
     assetMap[ticker].transactions.push(tx);
 
-    // calculate quantity and cost
+    // process buy: increase holdings, cost basis, and add to FIFO queue
     if (tx.type.toLowerCase() === "buy") {
       assetMap[ticker].totalQuantity += tx.quantity;
       assetMap[ticker].totalCost += tx.quantity * tx.price;
-      // add to FIFO queue
+      // add to queue (oldest buys at index 0, newest at end)
       assetMap[ticker].buyQueue.push({
         quantity: tx.quantity,
         price: tx.price,
         originalQuantity: tx.quantity,
       });
+      // process sell: use FIFO - sell oldest shares first (matches tax/accounting standards)
+      // example: buy 10 @ $100, buy 5 @ $120, sell 8 → sell 8 from first buy (cost: 8 × $100 = $800)
     } else {
-      // for sells, use FIFO - sell oldest shares first
       let remainingToSell = tx.quantity;
-      let costOfSoldShares = 0;
+      let costOfSoldShares = 0; // track cost basis of shares being sold
 
-      // go through buy queue in order (oldest first)
-      for (let i = 0; i < assetMap[ticker].buyQueue.length && remainingToSell > 0; i++) {
+      // loop through buy queue (oldest first) until all shares sold
+      for (
+        let i = 0;
+        i < assetMap[ticker].buyQueue.length && remainingToSell > 0;
+        i++
+      ) {
         const buyEntry = assetMap[ticker].buyQueue[i];
-        if (buyEntry.quantity <= 0) continue; // skip already exhausted buys
+        if (buyEntry.quantity <= 0) continue; // skip exhausted buys
 
+        // sell minimum of: remaining to sell OR available from this buy
         const sharesFromThisBuy = Math.min(remainingToSell, buyEntry.quantity);
         costOfSoldShares += sharesFromThisBuy * buyEntry.price;
-        buyEntry.quantity -= sharesFromThisBuy; // reduce available shares
+        buyEntry.quantity -= sharesFromThisBuy;
         remainingToSell -= sharesFromThisBuy;
       }
 
+      // update holdings and cost basis (subtract cost of sold shares, not sell price)
       assetMap[ticker].totalQuantity -= tx.quantity;
       assetMap[ticker].totalCost -= costOfSoldShares;
     }
   });
 
-  // convert the map to an array and calculate portfolio metrics
+  // phase 3: calculate metrics and return results
   return Object.values(assetMap)
-    .filter((asset) => asset.totalQuantity > 0) // only show assets you still own
+    .filter((asset) => asset.totalQuantity > 0) // only assets still owned
     .map((asset) => {
-      // get current price from prices
+      // get current price data (fallback to defaults if API data unavailable)
       const priceData = prices[asset.ticker] || {
         currentPrice: 0,
         priceChange24h: 0,
@@ -322,21 +316,25 @@ export const calculatePortfolioData = (transactions, prices) => {
         name: null,
       };
 
-      // prioritize transaction name (from hardcoded list) over API name to avoid "Common Stock" suffix
-      // only use API name as fallback if transaction doesn't have a name
-      const companyName = asset.name || priceData.name || asset.ticker;
+      // determine display name: transaction name > API name > ticker
+      const hasRealName = asset.name && asset.name !== asset.ticker;
+      const companyName = hasRealName
+        ? asset.name
+        : priceData.name || asset.ticker;
 
-      // calculate average buy price (cost basis per share/coin)
+      // calculate average buy price: totalCost / totalQuantity
+      // example: $800 cost / 7 shares = $114.29 per share
       const avgPrice =
         asset.totalQuantity > 0 ? asset.totalCost / asset.totalQuantity : 0;
 
-      // calculate current market value
+      // calculate current market value: quantity × currentPrice
       const totalValue = calculateValue(
         asset.totalQuantity,
         priceData.currentPrice
       );
 
-      // calculate profit/loss (unrealized)
+      // calculate profit/loss (unrealized): currentValue - costBasis
+      // example: $1,050 value - $800 cost = $250 profit
       const pnl = calculateUnrealizedPnL(
         asset.totalQuantity,
         avgPrice,

@@ -27,21 +27,29 @@ const FIELD_IDS = {
 const GMT8_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 // helper to combine date and time into ISO datetime string for Airtable
-// user input is assumed to be in GMT+8, we convert to UTC for storage
+// user input is assumed to be in GMT+8, convert to UTC for storage
 const combineDateAndTime = (date, time) => {
   if (!date) return null;
   // if time is provided, combine into ISO datetime string
   if (time) {
     // parse date and time components
-    const [year, month, day] = date.split('-').map(Number);
-    const [hours, minutes] = time.split(':').map(Number);
-    
+    const [year, month, day] = date.split("-").map(Number);
+    const [hours, minutes] = time.split(":").map(Number);
+
     // create a UTC timestamp treating the input values as if they were UTC
     // then subtract 8 hours to convert from "GMT+8 input" to actual UTC
-    // example: user enters 09:30 GMT+8 -> we want to store 01:30 UTC
-    const inputAsUtcTimestamp = Date.UTC(year, month - 1, day, hours, minutes, 0, 0);
+    // example: user enters 09:30 GMT+8 -> stores 01:30 UTC
+    const inputAsUtcTimestamp = Date.UTC(
+      year,
+      month - 1,
+      day,
+      hours,
+      minutes,
+      0,
+      0
+    );
     const actualUtcTimestamp = inputAsUtcTimestamp - GMT8_OFFSET_MS;
-    
+
     return new Date(actualUtcTimestamp).toISOString();
   }
   // if no time, just return the date
@@ -49,31 +57,31 @@ const combineDateAndTime = (date, time) => {
 };
 
 // helper to parse datetime from Airtable into separate date and time
-// airtable returns UTC, we convert to GMT+8 for display
+// airtable returns UTC, convert to GMT+8 for display
 const parseDatetime = (datetime) => {
   if (!datetime) return { date: "", time: "" };
-  
+
   try {
     const dateObj = new Date(datetime);
     if (isNaN(dateObj.getTime())) {
       // invalid date, try to extract date portion
       return { date: datetime.split("T")[0] || datetime, time: "" };
     }
-    
+
     // convert UTC to GMT+8 by adding 8 hours
     const gmt8Time = new Date(dateObj.getTime() + GMT8_OFFSET_MS);
-    
+
     // extract date in YYYY-MM-DD format (in GMT+8)
     const year = gmt8Time.getUTCFullYear();
     const month = String(gmt8Time.getUTCMonth() + 1).padStart(2, "0");
     const day = String(gmt8Time.getUTCDate()).padStart(2, "0");
     const date = `${year}-${month}-${day}`;
-    
+
     // extract time in HH:MM format (in GMT+8)
     const hours = String(gmt8Time.getUTCHours()).padStart(2, "0");
     const minutes = String(gmt8Time.getUTCMinutes()).padStart(2, "0");
     const time = `${hours}:${minutes}`;
-    
+
     return { date, time };
   } catch {
     return { date: datetime, time: "" };
@@ -81,58 +89,42 @@ const parseDatetime = (datetime) => {
 };
 
 // headers needed for all airtable api requests
-// authorization tells airtable who we are (using our api key)
-// content-type tells airtable we're sending json data
+// authorization identifies the requester (using api key)
+// content-type indicates json data is being sent
 const headers = {
   Authorization: `Bearer ${API_KEY}`,
   "Content-Type": "application/json",
 };
 
-// helper function to retry Airtable request without ASSET_CLASS field if permission error occurs
-const retryWithoutAssetClass = async (url, method, fields, price, transaction) => {
-  const fieldsWithoutAssetClass = { ...fields };
-  delete fieldsWithoutAssetClass[FIELD_IDS.ASSET_CLASS];
-  
-  const retryResponse = await fetch(url, {
-    method,
-    headers,
-    body: JSON.stringify({ 
-      fields: fieldsWithoutAssetClass,
-      typecast: true,
-    }),
-  });
-  
-  if (!retryResponse.ok) {
-    const retryErrorData = await retryResponse.json().catch(() => ({}));
-    const retryErrorMessage = retryErrorData.error?.message || `failed to ${method === "POST" ? "create" : "update"} record`;
-    throw new Error(retryErrorMessage);
-  }
-  
-  const retryData = await retryResponse.json();
-  const originalPrice = transaction.price;
-  const originalPriceNum = originalPrice != null ? parseFloat(originalPrice) : price;
-  
-  const finalTransaction = {
-    ...transaction,
-    id: retryData.id || transaction.id,
-    price: originalPriceNum,
-    time: transaction.time || "", // preserve time field
-    assetType: transaction.assetType || transaction.assetClass || normalizeAssetType(retryData.fields?.["Asset Class"]),
-    totalCost: transaction.quantity !== undefined 
-      ? transaction.quantity * originalPriceNum 
-      : (transaction.totalCost || transaction.quantity * originalPriceNum),
+// build fields object for Airtable API requests
+// consolidates field building logic used in both create and update
+const buildAirtableFields = (
+  transaction,
+  transactionType,
+  quantity,
+  price,
+  totalCost,
+  datetime,
+  assetClass
+) => {
+  const fields = {
+    [FIELD_IDS.TICKER]: transaction.ticker,
+    [FIELD_IDS.NAME]: transaction.name || transaction.ticker,
+    [FIELD_IDS.TYPE]: transactionType,
+    [FIELD_IDS.QUANTITY]: quantity,
+    [FIELD_IDS.PRICE]: price,
+    [FIELD_IDS.TOTAL_COST]: totalCost,
+    [FIELD_IDS.DATE]: datetime, // combined date and time in ISO format
+    [FIELD_IDS.ASSET_CLASS]: assetClass === "Crypto" ? "Crypto" : "Stock",
   };
-  
-  return {
-    ...finalTransaction,
-    _assetClassNotSet: true,
-  };
+
+  return fields;
 };
 
 // fetch all transactions from airtable
-// this function gets all the buy/sell records we've stored
+// this function gets all the buy/sell records stored
 export const fetchTransactions = async () => {
-  // check if we have the required credentials
+  // check if required credentials are present
   if (!API_KEY || !BASE_ID) {
     console.warn("airtable credentials missing");
     return [];
@@ -158,9 +150,9 @@ export const fetchTransactions = async () => {
     const data = await response.json();
 
     // airtable returns records in a specific format
-    // we need to convert them to a simpler format our app can use
+    // converts them to a simpler format the app can use
     // note: airtable api returns field names in responses (like "Ticker", "Price")
-    // we use field names to read data since that's what airtable returns
+    // uses field names to read data since that's what airtable returns
     return data.records.map((record) => {
       const fields = record.fields;
 
@@ -171,10 +163,10 @@ export const fetchTransactions = async () => {
       const priceRaw = fields.Price;
       const price = priceRaw != null ? parseFloat(priceRaw) : 0;
       const totalCost = parseFloat(fields["Total Cost"] || 0);
-      
+
       // handle asset class - normalize using utility function
       const assetType = normalizeAssetType(fields["Asset Class"]);
-      
+
       // parse datetime from Airtable into separate date and time
       const { date, time } = parseDatetime(fields.Date);
 
@@ -201,7 +193,7 @@ export const fetchTransactions = async () => {
 // create a new transaction in airtable
 // this function saves a new buy/sell record to the database
 export const createTransaction = async (transaction) => {
-  // check if we have credentials
+  // check if credentials are present
   if (!API_KEY || !BASE_ID) return null;
 
   // calculate total cost from quantity * price
@@ -215,24 +207,23 @@ export const createTransaction = async (transaction) => {
   // format transaction type using utility
   const transactionType = formatTransactionType(transaction.type);
 
-  const assetClass = normalizeAssetType(transaction.assetType || transaction.assetClass || "Stock");
-  
+  const assetClass = normalizeAssetType(
+    transaction.assetType || transaction.assetClass || "Stock"
+  );
+
   // combine date and time into ISO datetime string for Airtable
   const datetime = combineDateAndTime(transaction.date, transaction.time);
 
-  const fields = {
-    [FIELD_IDS.TICKER]: transaction.ticker,
-    [FIELD_IDS.NAME]: transaction.name || transaction.ticker,
-    [FIELD_IDS.TYPE]: transactionType,
-    [FIELD_IDS.QUANTITY]: quantity,
-    [FIELD_IDS.PRICE]: price,
-    [FIELD_IDS.TOTAL_COST]: totalCost,
-    [FIELD_IDS.DATE]: datetime, // combined date and time in ISO format
-  };
-
-  if (assetClass === "Stock" || assetClass === "Crypto") {
-    fields[FIELD_IDS.ASSET_CLASS] = String(assetClass).trim();
-  }
+  // build fields object for Airtable
+  const fields = buildAirtableFields(
+    transaction,
+    transactionType,
+    quantity,
+    price,
+    totalCost,
+    datetime,
+    assetClass
+  );
 
   try {
     const response = await fetch(BASE_URL, {
@@ -243,29 +234,26 @@ export const createTransaction = async (transaction) => {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const errorMessage = errorData.error?.message || "failed to create record";
-      
-      const isSelectFieldError = errorMessage.includes("Insufficient permissions to create new select option") || 
-          errorMessage.includes("invalid value for select") ||
-          errorMessage.includes("Invalid enum value") ||
-          (errorMessage.includes("Could not parse") && errorMessage.includes("Asset Class"));
-      
-      if (isSelectFieldError) {
-        return retryWithoutAssetClass(BASE_URL, "POST", fields, price, transaction);
-      }
-      
+      const errorMessage =
+        errorData.error?.message || "failed to create record";
       throw new Error(errorMessage);
     }
 
     const data = await response.json();
-    const originalPriceNum = originalPrice != null ? parseFloat(originalPrice) : price;
-    
+
+    // preserve original price precision (important for crypto with many decimals)
+    const finalPrice =
+      originalPrice != null ? parseFloat(originalPrice) : price;
+
     return {
       ...transaction,
       id: data.id,
-      price: originalPriceNum,
+      price: finalPrice,
       totalCost: totalCost,
-      assetType: transaction.assetType || transaction.assetClass || normalizeAssetType(data.fields?.["Asset Class"]),
+      assetType:
+        transaction.assetType ||
+        transaction.assetClass ||
+        normalizeAssetType(data.fields?.["Asset Class"]),
     };
   } catch (error) {
     console.error("airtable create error:", error);
@@ -276,7 +264,7 @@ export const createTransaction = async (transaction) => {
 // update an existing transaction in airtable
 // this function modifies a transaction that already exists
 export const updateTransaction = async (id, transaction) => {
-  // check if we have credentials
+  // check if credentials are present
   if (!API_KEY || !BASE_ID) return null;
 
   // calculate values
@@ -288,24 +276,23 @@ export const updateTransaction = async (id, transaction) => {
   // format transaction type using utility
   const transactionType = formatTransactionType(transaction.type);
 
-  const assetClass = normalizeAssetType(transaction.assetType || transaction.assetClass || "Stock");
-  
+  const assetClass = normalizeAssetType(
+    transaction.assetType || transaction.assetClass || "Stock"
+  );
+
   // combine date and time into ISO datetime string for Airtable
   const datetime = combineDateAndTime(transaction.date, transaction.time);
 
-  const fields = {
-    [FIELD_IDS.TICKER]: transaction.ticker,
-    [FIELD_IDS.NAME]: transaction.name || transaction.ticker,
-    [FIELD_IDS.TYPE]: transactionType,
-    [FIELD_IDS.QUANTITY]: quantity,
-    [FIELD_IDS.PRICE]: price,
-    [FIELD_IDS.TOTAL_COST]: totalCost,
-    [FIELD_IDS.DATE]: datetime, // combined date and time in ISO format
-  };
-
-  if (assetClass === "Stock" || assetClass === "Crypto") {
-    fields[FIELD_IDS.ASSET_CLASS] = assetClass;
-  }
+  // build fields object for Airtable
+  const fields = buildAirtableFields(
+    transaction,
+    transactionType,
+    quantity,
+    price,
+    totalCost,
+    datetime,
+    assetClass
+  );
 
   try {
     const response = await fetch(`${BASE_URL}/${id}`, {
@@ -316,23 +303,14 @@ export const updateTransaction = async (id, transaction) => {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const errorMessage = errorData.error?.message || "failed to update record";
-      
-      const isSelectFieldError = errorMessage.includes("Insufficient permissions to create new select option") || 
-          errorMessage.includes("invalid value for select") ||
-          errorMessage.includes("Invalid enum value") ||
-          (errorMessage.includes("Could not parse") && errorMessage.includes("Asset Class"));
-      
-      if (isSelectFieldError) {
-        return retryWithoutAssetClass(`${BASE_URL}/${id}`, "PATCH", fields, price, { ...transaction, id });
-      }
-      
+      const errorMessage =
+        errorData.error?.message || "failed to update record";
       throw new Error(errorMessage);
     }
 
-    return { 
-      ...transaction, 
-      id, 
+    return {
+      ...transaction,
+      id,
       totalCost,
       assetType: transaction.assetType || transaction.assetClass,
     };
@@ -345,7 +323,7 @@ export const updateTransaction = async (id, transaction) => {
 // delete a transaction from airtable
 // this function removes a transaction from the database
 export const deleteTransaction = async (id) => {
-  // check if we have credentials
+  // check if credentials are present
   if (!API_KEY || !BASE_ID) return false;
 
   try {

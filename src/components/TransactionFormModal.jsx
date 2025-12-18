@@ -86,22 +86,33 @@ export default function TransactionFormModal({
     return isNaN(num) ? String(price) : num.toFixed(2);
   };
 
-  // fetch current market price
+  // fetch current market price from API
+  // automatically fills price field when user selects an asset
   const fetchCurrentPrice = useCallback(async (ticker, assetType, forceUpdate = false) => {
+    // skip if price already exists and not forcing an update
     if (!forceUpdate && formData.price?.trim()) return;
     
     setIsFetchingPrice(true);
     try {
+      // choose appropriate API based on asset type
       const fetchFn = assetType.toLowerCase() === "crypto" ? fetchCryptoPrices : fetchStockPrices;
       const prices = await fetchFn([ticker]);
       const priceData = prices[ticker];
       
+      // update form price and name if valid data is received
       if (priceData?.currentPrice > 0) {
         setFormData(prev => {
+          const updates = {};
+          // only update price if forcing or price field is empty
           if (forceUpdate || !prev.price?.trim()) {
-            return { ...prev, price: formatPriceInput(priceData.currentPrice) };
+            updates.price = formatPriceInput(priceData.currentPrice);
           }
-          return prev;
+          // update name from API if not already set or if name matches ticker
+          // ensures non-hardcoded tickers get names from the API
+          if (priceData.name && (!prev.name || prev.name === prev.ticker)) {
+            updates.name = priceData.name;
+          }
+          return Object.keys(updates).length > 0 ? { ...prev, ...updates } : prev;
         });
       }
     } catch (error) {
@@ -109,7 +120,7 @@ export default function TransactionFormModal({
     } finally {
       setIsFetchingPrice(false);
     }
-  }, [formData.price]);
+  }, [formData.price, formData.name, formData.ticker]);
 
   // handle asset selection from dropdown
   const selectAsset = useCallback((asset) => {
@@ -250,10 +261,22 @@ export default function TransactionFormModal({
     else if (isNaN(quantity) || quantity <= 0) newErrors.quantity = "Quantity must be a positive number";
 
     // check if selling more than owned
-    if (formData.type === "Sell" && !isEditMode) {
+    if (formData.type === "Sell") {
       const asset = portfolioData.find(a => a.ticker === formData.ticker);
-      if (quantity > (asset?.quantity || 0)) {
-        newErrors.quantity = `You only own ${asset?.quantity || 0} ${formData.ticker}. Cannot sell more than you own.`;
+      let availableQuantity = asset?.quantity || 0;
+      
+      // if editing a sell transaction, add back the original quantity being sold
+      if (isEditMode && initialData?.type === "Sell" && initialData?.ticker === formData.ticker) {
+        availableQuantity += initialData.quantity;
+      }
+      
+      // if editing a buy transaction to sell, subtract the original buy quantity
+      if (isEditMode && initialData?.type === "Buy" && initialData?.ticker === formData.ticker) {
+        availableQuantity -= initialData.quantity;
+      }
+      
+      if (quantity > availableQuantity) {
+        newErrors.quantity = `You only own ${availableQuantity} ${formData.ticker}. Cannot sell more than you own.`;
       }
     }
 

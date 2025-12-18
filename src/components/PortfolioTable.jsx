@@ -1,6 +1,7 @@
 // portfolio assets table with sorting and actions
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { TrashIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
 import IconButton from './ui/IconButton';
@@ -23,7 +24,8 @@ const COLUMNS = [
 export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddTransaction }) {
   const [openDropdownId, setOpenDropdownId] = useState(null);
   
-  const { sortConfig, handleSort, renderSortArrow, sortData } = useSort({ 
+  // sorting hook for assets table (default: sort by total value descending)
+  const { handleSort, renderSortArrow, sortData } = useSort({ 
     key: 'totalValue', 
     direction: 'desc' 
   });
@@ -115,6 +117,19 @@ function AssetRow({
   const change24h = format24hChange(asset.priceChange24h);
   const costBasis = asset.totalValue - asset.pnl;
   const pnlPercent = calculatePnLPercentage(asset.pnl, costBasis);
+  const buttonRef = useRef(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
+
+  // calculate dropdown position when it opens
+  useEffect(() => {
+    if (isDropdownOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + 8, // 8px gap (equivalent to top-8)
+        right: window.innerWidth - rect.right,
+      });
+    }
+  }, [isDropdownOpen]);
 
   return (
     <tr className="group hover:bg-[var(--bg-card-hover)] transition-colors">
@@ -125,12 +140,14 @@ function AssetRow({
           className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
         >
           <AssetLogo logo={asset.logo} ticker={asset.ticker} name={asset.name} size={8} />
-          <div className="font-bold text-sm text-[var(--text-primary)]">
-            {asset.ticker}
-            <span className="mx-1 text-[var(--text-secondary)]">|</span>
-            <span className="text-[var(--text-secondary)] font-normal" title={asset.name}>
-              {truncateName(asset.name, 25)}
-            </span>
+          <div className="font-bold text-sm text-[var(--text-primary)] min-w-0">
+            <div className="truncate">
+              {asset.ticker}
+              <span className="mx-1 text-[var(--text-secondary)]">|</span>
+              <span className="text-[var(--text-secondary)] font-normal" title={asset.name}>
+                {truncateName(asset.name, 15)}
+              </span>
+            </div>
           </div>
         </Link>
       </td>
@@ -141,16 +158,16 @@ function AssetRow({
       </td>
 
       {/* 24h change */}
-      <td className={`py-4 px-6 text-right text-sm font-medium ${change24h.isPositive ? 'text-green' : 'text-red'}`}>
+      <td className={`py-4 px-6 text-right text-sm font-medium whitespace-nowrap ${change24h.isPositive ? 'text-green' : 'text-red'}`}>
         {change24h.display}
       </td>
 
       {/* market value */}
       <td className="py-4 px-6 text-right">
-        <div className="text-sm font-bold text-[var(--text-primary)]">
+        <div className="text-sm font-bold text-[var(--text-primary)] whitespace-nowrap">
           {formatCurrency(asset.totalValue, hideValues)}
         </div>
-        <div className="text-xs text-[var(--text-secondary)]">
+        <div className="text-xs text-[var(--text-secondary)] whitespace-nowrap">
           {formatQuantity(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
         </div>
       </td>
@@ -179,17 +196,23 @@ function AssetRow({
             onClick={(e) => { e.stopPropagation(); onAddTransaction(asset.ticker); }}
             title="Add transaction"
           />
-          <IconButton
-            variant="more"
-            size={24}
-            onClick={(e) => onDropdownToggle(e, asset.id)}
-            title="Actions"
-          />
+          <div ref={buttonRef}>
+            <IconButton
+              variant="more"
+              size={24}
+              onClick={(e) => onDropdownToggle(e, asset.id)}
+              title="Actions"
+            />
+          </div>
 
-          {isDropdownOpen && (
+          {isDropdownOpen && createPortal(
             <div 
               ref={dropdownRef}
-              className="absolute right-0 top-8 z-50 w-48 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl animate-fade-in"
+              className="fixed z-50 w-48 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-xl animate-fade-in max-h-64 overflow-y-auto"
+              style={{
+                top: `${dropdownPosition.top}px`,
+                right: `${dropdownPosition.right}px`,
+              }}
             >
               <div className="py-1">
                 <Link
@@ -206,7 +229,8 @@ function AssetRow({
                   <TrashIcon size={16} /> Remove asset
                 </button>
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       </td>

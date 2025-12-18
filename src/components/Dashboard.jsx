@@ -58,24 +58,32 @@ export default function Dashboard() {
   const [hideValues, setHideValues] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [filterType, setFilterType] = useState("All");
-  const { sortConfig: txSortConfig, handleSort: handleTxSort, sortData, renderSortArrow: renderTxSortArrow } = useSort({ key: "date", direction: "desc" });
+  // sorting hook for transactions table
+  const { handleSort: handleTxSort, sortData, renderSortArrow: renderTxSortArrow } = useSort({ key: "date", direction: "desc" });
 
-  // portfolio calculations
+  // portfolio calculations - memoized to avoid recalculating on every render
+  // total market value of all assets
   const totalValue = useMemo(() => portfolioData.reduce((sum, a) => sum + a.totalValue, 0), [portfolioData]);
+  // total profit/loss (unrealized gains/losses)
   const totalPnL = useMemo(() => portfolioData.reduce((sum, a) => sum + a.pnl, 0), [portfolioData]);
+  // total 24h change in portfolio value (priceChange24h is a percentage)
   const total24hChange = useMemo(() => {
     return portfolioData.reduce((sum, a) => sum + (a.priceChange24h / 100) * a.currentPrice * a.quantity, 0);
   }, [portfolioData]);
 
   const is24hPositive = total24hChange >= 0;
   const isPositive = totalPnL >= 0;
-  const totalCostBasis = portfolioData.reduce((sum, a) => sum + a.totalCost, 0);
+  // calculate total cost basis (total amount paid for all assets)
+  const totalCostBasis = useMemo(() => portfolioData.reduce((sum, a) => sum + a.totalCost, 0), [portfolioData]);
 
-  // find best/worst performers
+  // find best/worst performers by percentage return
+  // sort by PnL percentage (profit/loss divided by cost basis)
   const sortedByPerf = useMemo(() => {
     return [...portfolioData].sort((a, b) => {
+      // calculate percentage return for each asset
       const pnlPercentA = a.totalCost > 0 ? a.pnl / a.totalCost : 0;
       const pnlPercentB = b.totalCost > 0 ? b.pnl / b.totalCost : 0;
+      // sort descending (highest return first)
       return pnlPercentB - pnlPercentA;
     });
   }, [portfolioData]);
@@ -83,10 +91,12 @@ export default function Dashboard() {
   const bestPerformer = sortedByPerf[0] || null;
   const worstPerformer = sortedByPerf[sortedByPerf.length - 1] || null;
 
-  // delete asset handler
+  // delete asset handler - removes all transactions for a given ticker
   const handleDeleteAsset = useCallback(async (ticker) => {
     if (!window.confirm(`Are you sure you want to remove ${ticker}? This will delete all transactions associated with it.`)) return;
+    // find all transactions for this ticker
     const txsToDelete = transactions.filter((tx) => tx.ticker === ticker);
+    // delete all transactions in batch
     deleteAsset.mutate({ ticker, transactionIds: txsToDelete.map((tx) => tx.id) });
   }, [transactions, deleteAsset]);
 
@@ -97,17 +107,19 @@ export default function Dashboard() {
     }
   }, [deleteTransactionMutation]);
 
-  // filter and sort transactions
+  // filter and sort transactions based on current filter and sort settings
   const allTransactionsSorted = useMemo(() => {
+    // first filter by asset type (All/Stock/Crypto)
     const filtered = transactions.filter((tx) => filterType === "All" || tx.assetType === filterType);
+    // then apply sorting with custom comparator
     return sortData(filtered, (a, b, key, direction) => {
       if (key === "date") {
-        // combine date and time for accurate sorting
+        // combine date and time for accurate chronological sorting
         const dateTimeA = a.time ? `${a.date}T${a.time}` : a.date;
         const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
         const dateComparison = new Date(dateTimeA) - new Date(dateTimeB);
         
-        // if dates are equal, use secondary sort by type
+        // if dates are equal, use secondary sort by transaction type
         // for descending (newest first): Sells before Buys (reverse of FIFO)
         // for ascending (oldest first): Buys before Sells (FIFO order)
         if (dateComparison === 0) {
@@ -119,13 +131,16 @@ export default function Dashboard() {
         return direction === "asc" ? dateComparison : -dateComparison;
       }
       if (key === "cost") {
+        // calculate total cost (quantity × price) for comparison
         const valA = a.quantity * a.price;
         const valB = b.quantity * b.price;
         return direction === "asc" ? valA - valB : valB - valA;
       }
       if (["quantity", "price"].includes(key)) {
+        // numeric comparison for quantity and price
         return direction === "asc" ? Number(a[key]) - Number(b[key]) : Number(b[key]) - Number(a[key]);
       }
+      // string comparison for text fields (ticker, type, etc.)
       const strA = String(a[key]).toLowerCase();
       const strB = String(b[key]).toLowerCase();
       return direction === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
@@ -194,7 +209,9 @@ export default function Dashboard() {
                   <span className={`text-sm font-bold ${is24hPositive ? "text-green" : "text-red"}`}>
                     {is24hPositive ? "+" : ""}{formatCurrency(total24hChange, hideValues)}
                   </span>
+                  {/* calculate 24h change percentage and display with arrow indicator */}
                   {(() => {
+                    // calculate percentage change: (change / previous value) × 100
                     const changePercent = !hideValues && totalValue > 0
                       ? (Math.abs(total24hChange) / (totalValue - total24hChange)) * 100
                       : 0;
