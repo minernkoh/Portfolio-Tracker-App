@@ -28,7 +28,7 @@ import {
   useAirtableStatus,
 } from "../hooks/usePortfolio";
 import { useTransactionModal } from "../hooks/useTransactionModal";
-import { EyeIcon, EyeSlashIcon, ArrowClockwiseIcon } from "@phosphor-icons/react";
+import { EyeIcon, EyeSlashIcon, ArrowClockwiseIcon, CaretUp, CaretDown } from "@phosphor-icons/react";
 import { useSort } from "../hooks/useSort";
 
 export default function Dashboard() {
@@ -59,7 +59,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [filterType, setFilterType] = useState("All");
   // sorting hook for transactions table
-  const { handleSort: handleTxSort, sortData, renderSortArrow: renderTxSortArrow } = useSort({ key: "date", direction: "desc" });
+  const { handleSort: handleTxSort, sortData, getSortDirection: getTxSortDirection } = useSort({ key: "date", direction: "desc" });
 
   // portfolio calculations - memoized to avoid recalculating on every render
   // total market value of all assets
@@ -217,8 +217,9 @@ export default function Dashboard() {
                       : 0;
                     const change24h = format24hChange(changePercent);
                     return (
-                      <span className={`text-sm font-bold ${change24h.isPositive ? "text-green" : "text-red"}`}>
-                        {!hideValues ? change24h.display : "***"} (24h)
+                      <span className={`text-sm font-bold flex items-center gap-1 ${change24h.isPositive ? "text-green" : "text-red"}`}>
+                        {change24h.isPositive ? <CaretUp size={14} weight="fill" /> : <CaretDown size={14} weight="fill" />}
+                        <span>{!hideValues ? `${change24h.formatted}%` : "***"} (24h)</span>
                       </span>
                     );
                   })()}
@@ -246,7 +247,12 @@ export default function Dashboard() {
                 label="All-time profit/loss"
                 value={totalPnL}
                 valueFormatted={`${isPositive ? "+" : ""}${formatCurrency(totalPnL, hideValues)}`}
-                subtitle={`${isPositive ? "▲" : "▼"} ${!hideValues ? calculatePnLPercentage(totalPnL, totalCostBasis) : "**"}%`}
+                subtitle={
+                  <span className="flex items-center gap-1">
+                    {isPositive ? <CaretUp size={12} weight="fill" /> : <CaretDown size={12} weight="fill" />}
+                    <span>{!hideValues ? Math.abs(parseFloat(calculatePnLPercentage(totalPnL, totalCostBasis))).toFixed(2) : "**"}%</span>
+                  </span>
+                }
                 isPositive={isPositive}
                 hideValues={hideValues}
               />
@@ -256,7 +262,12 @@ export default function Dashboard() {
                   label="Best performer"
                   value={bestPerformer.ticker}
                   valueFormatted={bestPerformer.ticker}
-                  subtitle={`▲ +${!hideValues ? calculatePnLPercentage(bestPerformer.pnl, bestPerformer.totalCost) : "**"}%`}
+                  subtitle={
+                    <span className="flex items-center gap-1">
+                      <CaretUp size={12} weight="fill" />
+                      <span>+{!hideValues ? calculatePnLPercentage(bestPerformer.pnl, bestPerformer.totalCost) : "**"}%</span>
+                    </span>
+                  }
                   isPositive={true}
                   hideValues={hideValues}
                 />
@@ -268,7 +279,13 @@ export default function Dashboard() {
                   label="Worst performer"
                   value={worstPerformer.ticker}
                   valueFormatted={worstPerformer.ticker}
-                  subtitle={`${worstPerformer.pnl >= 0 ? "▲ +" : "▼"} ${!hideValues ? calculatePnLPercentage(worstPerformer.pnl, worstPerformer.totalCost) : "**"}%`}
+                  subtitle={
+                    <span className="flex items-center gap-1">
+                      {worstPerformer.pnl >= 0 ? <CaretUp size={12} weight="fill" /> : <CaretDown size={12} weight="fill" />}
+                      {worstPerformer.pnl >= 0 && <span>+</span>}
+                      <span>{!hideValues ? Math.abs(parseFloat(calculatePnLPercentage(worstPerformer.pnl, worstPerformer.totalCost))).toFixed(2) : "**"}%</span>
+                    </span>
+                  }
                   isPositive={worstPerformer.pnl >= 0}
                   hideValues={hideValues}
                 />
@@ -322,7 +339,16 @@ export default function Dashboard() {
                         className={`py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] hover:text-white ${col.align === "right" ? "text-right" : ""}`}
                         onClick={() => handleTxSort(col.key)}
                       >
-                        {col.label} {renderTxSortArrow(col.key)}
+                        <div className={`flex items-center gap-1 ${col.align === "right" ? "justify-end" : ""}`}>
+                          {col.label}
+                          {getTxSortDirection(col.key) && (
+                            getTxSortDirection(col.key) === 'asc' ? (
+                              <CaretUp size={12} weight="fill" className="text-white" />
+                            ) : (
+                              <CaretDown size={12} weight="fill" className="text-white" />
+                            )
+                          )}
+                        </div>
                     </th>
                     ))}
                     <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Actions</th>

@@ -21,6 +21,7 @@ const getDefaultFormData = () => ({
   assetType: "stock",
   quantity: "",
   price: "",
+  totalSpent: "",
   date: new Date().toISOString().split("T")[0],
   time: new Date().toTimeString().slice(0, 5),
 });
@@ -55,14 +56,24 @@ export default function TransactionFormModal({
       const isNewTransaction = initialData.isNew && !initialData.id;
       const hasPrice = initialData.price != null && initialData.price !== "";
 
+      const initialQuantity = initialData.quantity != null ? String(initialData.quantity) : "";
+      const initialPrice = initialData.price != null ? formatPriceForDisplay(initialData.price) : "";
+      const initialTotal = initialQuantity && initialPrice 
+        ? (parseFloat(initialQuantity) * parseFloat(initialPrice)).toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })
+        : "";
+
       setFormData({
         type: initialData.type || "Buy",
         ticker: tickerValue,
         name: initialData.name || (match ? match.name : ""),
         assetType: assetTypeValue,
         logo: initialData.logo || (match ? match.logo : undefined),
-        quantity: initialData.quantity != null ? String(initialData.quantity) : "",
-        price: initialData.price != null ? formatPriceForDisplay(initialData.price) : "",
+        quantity: initialQuantity,
+        price: initialPrice,
+        totalSpent: initialTotal,
         date: initialData.date ? new Date(initialData.date).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
         time: initialData.time || new Date().toTimeString().slice(0, 5),
       });
@@ -80,10 +91,11 @@ export default function TransactionFormModal({
     setErrors({});
   }, [isOpen, initialData, isEditMode]);
 
-  // format price for display (2 decimals)
+  // format price for display - use formatPriceInput to preserve precision for small numbers
   const formatPriceForDisplay = (price) => {
+    if (price === null || price === undefined || price === "") return "";
     const num = parseFloat(price);
-    return isNaN(num) ? String(price) : num.toFixed(2);
+    return isNaN(num) ? String(price) : formatPriceInput(num);
   };
 
   // fetch current market price from API
@@ -240,6 +252,45 @@ export default function TransactionFormModal({
       setFormData(prev => ({ ...prev, assetType: value, ticker: "", name: "", logo: undefined }));
       setSearchResults([]);
       setShowDropdown(false);
+    } else if (name === "quantity" || name === "price") {
+      // when quantity or price changes, recalculate total
+      setFormData(prev => {
+        const newData = { ...prev, [name]: value };
+        // remove commas when parsing
+        const quantityStr = name === "quantity" ? value.replace(/,/g, '') : prev.quantity.replace(/,/g, '');
+        const priceStr = name === "price" ? value.replace(/,/g, '') : prev.price.replace(/,/g, '');
+        const quantity = parseFloat(quantityStr);
+        const price = parseFloat(priceStr);
+        
+        if (!isNaN(quantity) && !isNaN(price) && quantity > 0 && price >= 0) {
+          const total = quantity * price;
+          // format with commas for thousands
+          newData.totalSpent = total.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          });
+        } else {
+          newData.totalSpent = "";
+        }
+        return newData;
+      });
+    } else if (name === "totalSpent") {
+      // when total is edited, recalculate quantity
+      setFormData(prev => {
+        const newData = { ...prev, totalSpent: value };
+        const total = parseFloat(value.replace(/[^\d.]/g, ''));
+        const price = parseFloat(prev.price.replace(/,/g, ''));
+        
+        if (!isNaN(total) && !isNaN(price) && total >= 0 && price > 0) {
+          const calculatedQty = total / price;
+          // format quantity with commas for thousands
+          newData.quantity = calculatedQty.toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 10,
+          });
+        }
+        return newData;
+      });
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
@@ -248,8 +299,9 @@ export default function TransactionFormModal({
   // validate form
   const validateForm = useCallback(() => {
     const newErrors = {};
-    const quantity = Number(formData.quantity);
-    const price = Number(formData.price);
+    // remove commas when parsing for validation
+    const quantity = Number(formData.quantity?.toString().replace(/,/g, ''));
+    const price = Number(formData.price?.toString().replace(/,/g, ''));
 
     if (!isEditMode) {
       if (!formData.assetType?.trim()) newErrors.assetType = "Asset type is required";
@@ -275,8 +327,13 @@ export default function TransactionFormModal({
         availableQuantity -= initialData.quantity;
       }
       
+      // format availableQuantity with commas for display
+      const formattedAvailable = availableQuantity.toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 10,
+      });
       if (quantity > availableQuantity) {
-        newErrors.quantity = `You only own ${availableQuantity} ${formData.ticker}. Cannot sell more than you own.`;
+        newErrors.quantity = `You only own ${formattedAvailable} ${formData.ticker}. Cannot sell more than you own.`;
       }
     }
 
@@ -306,9 +363,12 @@ export default function TransactionFormModal({
         ...formData,
         name: finalName,
         assetType: finalType,
-        quantity: parseFloat(formData.quantity),
+        quantity: parseFloat(formData.quantity.replace(/,/g, '')),
         price: parseFloat(formData.price),
       };
+      // remove totalSpent as it's a derived field - backend calculates it from quantity * price
+      // also parse totalSpent to remove commas before deletion if needed
+      delete submitData.totalSpent;
 
       if ((isEditMode || initialData?.id) && initialData?.id) {
         submitData.id = initialData.id;
@@ -459,11 +519,47 @@ export default function TransactionFormModal({
             <FormInput
               label="Quantity"
               name="quantity"
-              type="number"
-              step="any"
-              min="0"
+              type="text"
               value={formData.quantity}
-              onChange={handleChange}
+              onChange={(e) => {
+                // remove commas and other non-numeric characters except decimal point
+                const v = e.target.value.replace(/[^\d.]/g, '');
+                handleChange({ ...e, target: { ...e.target, name: 'quantity', value: v } });
+              }}
+              onKeyDown={(e) => {
+                // prevent form submission when Enter is pressed
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.target.blur(); // Trigger blur to format the value
+                }
+              }}
+              onBlur={(e) => {
+                const v = e.target.value?.trim().replace(/[^\d.]/g, '');
+                if (v) {
+                  const num = parseFloat(v);
+                  if (!isNaN(num) && num >= 0) {
+                    // format with commas for thousands
+                    const formatted = num.toLocaleString('en-US', {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 10,
+                    });
+                    setFormData(prev => {
+                      const newData = { ...prev, quantity: formatted };
+                      // recalculate total after quantity is formatted
+                      const quantityNum = parseFloat(formatted.replace(/,/g, ''));
+                      const price = parseFloat(prev.price.replace(/,/g, ''));
+                      if (!isNaN(quantityNum) && !isNaN(price) && quantityNum > 0 && price >= 0) {
+                        const total = quantityNum * price;
+                        newData.totalSpent = total.toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        });
+                      }
+                      return newData;
+                    });
+                  }
+                }
+              }}
               placeholder="0.00"
               error={errors.quantity}
               disabled={isSubmitting}
@@ -472,7 +568,7 @@ export default function TransactionFormModal({
               label="Price"
               name="price"
               type="number"
-              step="0.01"
+              step="any"
               min="0"
               value={formData.price}
               onChange={handleChange}
@@ -480,15 +576,33 @@ export default function TransactionFormModal({
                 const v = e.target.value?.trim();
                 if (v) {
                   const num = parseFloat(v);
-                  if (!isNaN(num)) {
-                    setFormData(prev => ({ ...prev, price: formatPriceInput(num) }));
+                  if (!isNaN(num) && num >= 0) {
+                    // format for display but preserve full precision in the actual value
+                    // use formatPriceInput to show appropriate decimal places
+                    const formatted = formatPriceInput(num);
+                    setFormData(prev => {
+                      const newData = { ...prev, price: formatted };
+                      // recalculate total after price is formatted
+                      const quantity = parseFloat(prev.quantity);
+                      const priceNum = parseFloat(formatted);
+                      if (!isNaN(quantity) && !isNaN(priceNum) && quantity > 0 && priceNum >= 0) {
+                        const total = quantity * priceNum;
+                        // Format with commas for thousands
+                        newData.totalSpent = total.toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        });
+                      }
+                      return newData;
+                    });
                   }
                 }
               }}
               placeholder={isFetchingPrice ? "Loading..." : "0.00"}
               error={errors.price}
               disabled={isSubmitting || isFetchingPrice}
-              rightIcon={isFetchingPrice && <SpinnerGap size={16} className="animate-spin text-[var(--text-secondary)]" />}
+              leftIcon={<span className="text-white">$</span>}
+              rightIcon={isFetchingPrice && <SpinnerGap size={18} className="animate-spin text-white" />}
             />
           </div>
 
@@ -518,6 +632,58 @@ export default function TransactionFormModal({
               inputClassName="text-white"
             />
           </div>
+
+          {/* total spent */}
+          <FormInput
+            label="Total Spent"
+            name="totalSpent"
+            type="text"
+            value={formData.totalSpent}
+            onChange={(e) => {
+              // remove commas and other non-numeric characters except decimal point
+              const v = e.target.value.replace(/[^\d.]/g, '');
+              handleChange({ ...e, target: { ...e.target, name: 'totalSpent', value: v } });
+            }}
+            onKeyDown={(e) => {
+              // prevent form submission when Enter is pressed
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.target.blur(); // trigger blur to format the value
+              }
+            }}
+            onBlur={(e) => {
+              const v = e.target.value?.trim().replace(/[^\d.]/g, '');
+              if (v) {
+                const num = parseFloat(v);
+                if (!isNaN(num) && num >= 0) {
+                  // format with commas for thousands
+                  const formatted = num.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  });
+                  setFormData(prev => {
+                    const newData = { ...prev, totalSpent: formatted };
+                    // recalculate quantity after total is formatted
+                    const price = parseFloat(prev.price.replace(/,/g, ''));
+                    if (!isNaN(price) && price > 0) {
+                      const calculatedQty = num / price;
+                      // format quantity with commas for thousands
+                      newData.quantity = calculatedQty.toLocaleString('en-US', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 10,
+                      });
+                    }
+                    return newData;
+                  });
+                }
+              }
+            }}
+            placeholder="0.00"
+            error={errors.totalSpent}
+            disabled={isSubmitting}
+            leftIcon={<span className="text-white">$</span>}
+            inputClassName="text-base font-bold"
+          />
 
           {/* error message */}
           {errors.submit && (

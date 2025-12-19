@@ -57,11 +57,15 @@ export default function IconButton({
   const buttonTitle = title || config.defaultTitle;
   const iconWeight = weight || config.weight;
 
+  // check if className contains text color override, otherwise use default
+  const hasTextColor = className.includes('text-');
+  const defaultTextColor = hasTextColor ? '' : 'text-[var(--text-secondary)]';
+  
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`p-1.5 text-[var(--text-secondary)] ${config.hoverColor} hover:bg-[var(--border-subtle)] rounded-md transition-colors disabled:opacity-50 ${className}`}
+      className={`p-1.5 ${defaultTextColor} ${config.hoverColor} hover:bg-[var(--border-subtle)] rounded-md transition-colors disabled:opacity-50 ${className}`}
       title={buttonTitle}
     >
       <Icon size={size} weight={iconWeight} />

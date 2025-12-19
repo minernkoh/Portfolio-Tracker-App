@@ -181,7 +181,7 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
       {/* performance chart */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-          <h2 className="text-white font-bold text-sm">Performance</h2>
+            <h2 className="text-white font-bold text-sm">Performance</h2>
           <ButtonGroup
             variant="pills"
             options={TIME_PERIODS}
@@ -282,20 +282,20 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
               {allocationData.map((entry, i) => {
                 const color = entry.name === "Others" ? OTHERS_COLOR : CHART_COLORS[i % CHART_COLORS.length];
                 return (
-                  <div key={entry.name} className="flex items-center justify-between text-xs gap-2">
-                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                      <div className="w-3 h-3 flex items-center justify-center flex-shrink-0" style={{ marginLeft: '-4px', marginRight: '4px' }}>
-                        <div
-                          className="w-2 h-2 rounded-full"
+                <div key={entry.name} className="flex items-center justify-between text-xs gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <div className="w-3 h-3 flex items-center justify-center flex-shrink-0" style={{ marginLeft: '-4px', marginRight: '4px' }}>
+                      <div
+                        className="w-2 h-2 rounded-full"
                           style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }}
-                        />
-                      </div>
-                      <span className="text-[var(--text-secondary)] font-medium text-[11px]" title={entry.name}>{entry.name}</span>
+                      />
                     </div>
-                    <span className="text-white font-bold text-[11px] flex-shrink-0">
-                      {hideValues ? "**" : ((entry.value / totalValue) * 100).toFixed(1)}%
-                    </span>
+                    <span className="text-[var(--text-secondary)] font-medium text-[11px]" title={entry.name}>{entry.name}</span>
                   </div>
+                  <span className="text-white font-bold text-[11px] flex-shrink-0">
+                    {hideValues ? "**" : ((entry.value / totalValue) * 100).toFixed(1)}%
+                  </span>
+                </div>
                 );
               })}
             </div>

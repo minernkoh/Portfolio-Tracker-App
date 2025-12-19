@@ -2,8 +2,8 @@
 
 import React, { useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeftIcon, TrendUpIcon, TrendDownIcon } from '@phosphor-icons/react';
-import { formatCurrency, formatQuantity, calculatePortfolioData, formatDateTime, truncateName, calculatePnLPercentage, format24hChange } from '../services/utils';
+import { ArrowLeftIcon, CaretUp, CaretDown } from '@phosphor-icons/react';
+import { formatCurrency, formatQuantity, formatQuantity4SF, calculatePortfolioData, formatDateTime, truncateName, calculatePnLPercentage, format24hChange, formatPrice } from '../services/utils';
 import AssetLogo from './ui/AssetLogo';
 import Layout from './Layout';
 import TransactionFormModal from './TransactionFormModal';
@@ -43,7 +43,7 @@ export default function AssetDetails() {
   const deleteTransactionMutation = useDeleteTransaction();
   
   // sorting for transaction history table
-  const { handleSort, sortData, renderSortArrow } = useSort({ key: 'date', direction: 'desc' });
+  const { handleSort, sortData, getSortDirection } = useSort({ key: 'date', direction: 'desc' });
   
   // sort transactions with custom comparator (same logic as Dashboard)
   const sortedTransactions = useMemo(() => {
@@ -144,9 +144,9 @@ export default function AssetDetails() {
               </div>
             </div>
             <div className="text-right">
-              <div className="text-xl font-bold text-white">{formatCurrency(asset.currentPrice)}</div>
+              <div className="text-xl font-bold text-white">{formatPrice(asset.currentPrice)}</div>
               <div className={`flex items-center gap-1 justify-end ${change24h.isPositive ? 'text-green' : 'text-red'}`}>
-                {change24h.isPositive ? <TrendUpIcon size={14} /> : <TrendDownIcon size={14} />}
+                {change24h.isPositive ? <CaretUp size={14} weight="fill" /> : <CaretDown size={14} weight="fill" />}
                 <span className="text-sm font-bold">{change24h.formatted}%</span>
               </div>
             </div>
@@ -170,13 +170,13 @@ export default function AssetDetails() {
             </div>
             <div>
               <div className="text-xs text-[var(--text-secondary)] mb-0.5">Avg Price</div>
-              <div className="text-sm font-bold text-white">{formatCurrency(asset.avgPrice)}</div>
+              <div className="text-sm font-bold text-white">{formatPrice(asset.avgPrice)}</div>
             </div>
             <div>
               <div className="text-xs text-[var(--text-secondary)] mb-0.5">Profit/Loss</div>
               <div className={`text-sm font-bold ${isProfitable ? 'text-green' : 'text-red'}`}>
                 {isProfitable ? '+' : ''}{formatCurrency(asset.pnl)}
-                <span className="text-xs ml-1">({isProfitable ? '+' : ''}{pnlPercent}%)</span>
+                <span className="text-xs ml-1">({isProfitable ? '+' : ''}{Math.abs(parseFloat(pnlPercent)).toFixed(2)}%)</span>
               </div>
             </div>
           </div>
@@ -209,8 +209,12 @@ export default function AssetDetails() {
                     >
                       <div className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
                         {col.label}
-                        {renderSortArrow(col.key) && (
-                          <span className="text-white text-[10px] ml-1">{renderSortArrow(col.key)}</span>
+                        {getSortDirection(col.key) && (
+                          getSortDirection(col.key) === 'asc' ? (
+                            <CaretUp size={12} weight="fill" className="text-white" />
+                          ) : (
+                            <CaretDown size={12} weight="fill" className="text-white" />
+                          )
                         )}
                       </div>
                     </th>
@@ -224,9 +228,9 @@ export default function AssetDetails() {
                     <tr key={tx.id} className="group hover:bg-[var(--bg-card-hover)] transition-colors">
                       <td className="py-4 px-6 text-sm text-white">{formatDateTime(tx.date, tx.time)}</td>
                       <td className="py-4 px-6"><TransactionTypeBadge type={tx.type} /></td>
-                      <td className="py-4 px-6 text-right text-sm text-white">{formatCurrency(tx.price)}</td>
+                      <td className="py-4 px-6 text-right text-sm text-white">{formatPrice(tx.price)}</td>
                       <td className="py-4 px-6 text-right text-sm text-white">
-                        {formatQuantity(tx.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
+                        {asset.assetType === 'Crypto' ? formatQuantity(tx.quantity) : formatQuantity4SF(tx.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
                       </td>
                       <td className="py-4 px-6 text-right text-sm text-white">{formatCurrency(tx.quantity * tx.price)}</td>
                       <td className="py-4 px-6 text-right">

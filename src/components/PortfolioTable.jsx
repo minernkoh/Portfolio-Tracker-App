@@ -3,9 +3,9 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { TrashIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
+import { TrashIcon, ClockCounterClockwiseIcon, CaretUp, CaretDown } from '@phosphor-icons/react';
 import IconButton from './ui/IconButton';
-import { formatCurrency, formatQuantity, truncateName, calculatePnLPercentage, format24hChange } from '../services/utils';
+import { formatCurrency, formatQuantity, formatQuantity4SF, truncateName, calculatePnLPercentage, format24hChange, formatPrice } from '../services/utils';
 import AssetLogo from './ui/AssetLogo';
 import EmptyState from './ui/EmptyState';
 import { useSort } from '../hooks/useSort';
@@ -13,19 +13,19 @@ import { useClickOutside } from '../hooks/useClickOutside';
 
 // table column configuration
 const COLUMNS = [
-  { key: 'ticker', label: 'Name', align: 'left' },
-  { key: 'currentPrice', label: 'Price', align: 'right' },
-  { key: 'priceChange24h', label: '24h%', align: 'right' },
-  { key: 'totalValue', label: 'Market Value', align: 'right' },
-  { key: 'avgPrice', label: 'Avg. Price', align: 'right' },
-  { key: 'pnl', label: 'Profit/Loss', align: 'right' },
+  { key: 'ticker', label: 'Name', align: 'left', width: '20%' },
+  { key: 'currentPrice', label: 'Price', align: 'right', width: '12%' },
+  { key: 'priceChange24h', label: '24h%', align: 'right', width: '12%' },
+  { key: 'totalValue', label: 'Market Value', align: 'right', width: '18%' },
+  { key: 'avgPrice', label: 'Avg. Price', align: 'right', width: '12%' },
+  { key: 'pnl', label: 'Profit/Loss', align: 'right', width: '16%' },
 ];
 
 export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddTransaction }) {
   const [openDropdownId, setOpenDropdownId] = useState(null);
   
   // sorting hook for assets table (default: sort by total value descending)
-  const { handleSort, renderSortArrow, sortData } = useSort({ 
+  const { handleSort, getSortDirection, sortData } = useSort({ 
     key: 'totalValue', 
     direction: 'desc' 
   });
@@ -56,7 +56,7 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
   return (
     <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse" style={{ tableLayout: 'auto' }}>
+        <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
           <thead>
             <tr className="border-b border-[var(--border-subtle)] cursor-pointer select-none">
               {COLUMNS.map((col) => (
@@ -64,19 +64,23 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                   key={col.key}
                   className={`py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] hover:text-white transition-colors ${
                     col.align === 'right' ? 'text-right' : ''
-                  } ${col.key === 'totalValue' ? 'min-w-[140px] whitespace-nowrap' : ''}`}
-                  style={col.key === 'totalValue' ? { minWidth: '140px' } : {}}
+                  }`}
+                  style={{ width: col.width }}
                   onClick={() => handleSort(col.key)}
                 >
                   <div className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
                     {col.label}
-                    {renderSortArrow(col.key) && (
-                      <span className="text-white text-[10px] ml-1">{renderSortArrow(col.key)}</span>
+                    {getSortDirection(col.key) && (
+                      getSortDirection(col.key) === 'asc' ? (
+                        <CaretUp size={12} weight="fill" className="text-white" />
+                      ) : (
+                        <CaretDown size={12} weight="fill" className="text-white" />
+                      )
                     )}
                   </div>
                 </th>
               ))}
-              <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Actions</th>
+              <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right" style={{ width: '10%' }}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
@@ -155,27 +159,30 @@ function AssetRow({
       
       {/* current price */}
       <td className="py-4 px-6 text-right text-sm font-medium text-[var(--text-primary)]">
-        {formatCurrency(asset.currentPrice, hideValues)}
+        {formatPrice(asset.currentPrice, hideValues)}
       </td>
 
       {/* 24h change */}
       <td className={`py-4 px-6 text-right text-sm font-medium whitespace-nowrap ${change24h.isPositive ? 'text-green' : 'text-red'}`}>
-        {change24h.display}
+        <div className="flex items-center gap-1 justify-end">
+          {change24h.isPositive ? <CaretUp size={14} weight="fill" /> : <CaretDown size={14} weight="fill" />}
+          <span>{change24h.formatted}%</span>
+        </div>
       </td>
 
       {/* market value */}
-      <td className="py-4 px-6 text-right" style={{ minWidth: '140px' }}>
+      <td className="py-4 px-6 text-right">
         <div className="text-sm font-bold text-[var(--text-primary)]" style={{ whiteSpace: 'nowrap' }}>
           {formatCurrency(asset.totalValue, hideValues)}
         </div>
         <div className="text-xs text-[var(--text-secondary)]" style={{ whiteSpace: 'nowrap' }}>
-          {formatQuantity(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
+          {asset.assetType === 'Crypto' ? formatQuantity(asset.quantity) : formatQuantity4SF(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
         </div>
       </td>
 
       {/* average price */}
       <td className="py-4 px-6 text-right text-sm font-medium text-[var(--text-primary)]">
-        {formatCurrency(asset.avgPrice, hideValues)}
+        {formatPrice(asset.avgPrice, hideValues)}
       </td>
 
       {/* profit/loss */}
@@ -183,8 +190,9 @@ function AssetRow({
         <div className={`text-sm font-bold ${asset.pnl >= 0 ? 'text-green' : 'text-red'}`}>
           {asset.pnl > 0 ? '+' : ''}{formatCurrency(asset.pnl, hideValues)}
         </div>
-        <div className={`text-xs ${asset.pnl >= 0 ? 'text-green' : 'text-red'}`}>
-          {asset.pnl >= 0 ? '▲' : '▼'} {pnlPercent}%
+        <div className={`text-xs flex items-center gap-1 justify-end ${asset.pnl >= 0 ? 'text-green' : 'text-red'}`}>
+          {asset.pnl >= 0 ? <CaretUp size={12} weight="fill" /> : <CaretDown size={12} weight="fill" />}
+          <span>{Math.abs(parseFloat(pnlPercent)).toFixed(2)}%</span>
         </div>
       </td>
       

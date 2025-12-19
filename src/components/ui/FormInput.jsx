@@ -22,6 +22,7 @@ export default function FormInput({
   className = '',
   inputClassName = '',
   rightIcon,
+  leftIcon,
   style,
 }) {
   const hasError = !!error;
@@ -41,6 +42,11 @@ export default function FormInput({
         </label>
       )}
       <div className="relative">
+        {leftIcon && (
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+            {leftIcon}
+          </div>
+        )}
         <input
           name={name}
           type={type}
@@ -55,7 +61,7 @@ export default function FormInput({
           min={min}
           max={max}
           autoComplete={autoComplete}
-          className={`${baseInputClass} ${borderClass} ${inputClassName}`}
+          className={`${baseInputClass} ${borderClass} ${inputClassName} ${leftIcon ? 'pl-7' : ''}`}
           style={style}
         />
         {rightIcon && (

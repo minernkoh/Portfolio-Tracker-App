@@ -45,11 +45,11 @@ export function useSort(initialConfig = { key: null, direction: "asc" }) {
     [sortConfig]
   );
 
-  // render sort arrow indicator
-  const renderSortArrow = useCallback(
+  // get sort direction for a given key (returns 'asc', 'desc', or null)
+  const getSortDirection = useCallback(
     (key) => {
       if (sortConfig.key !== key) return null;
-      return sortConfig.direction === "asc" ? "▲" : "▼";
+      return sortConfig.direction;
     },
     [sortConfig]
   );
@@ -57,6 +57,8 @@ export function useSort(initialConfig = { key: null, direction: "asc" }) {
   return {
     handleSort,
     sortData,
-    renderSortArrow,
+    getSortDirection,
+    sortKey: sortConfig.key,
+    sortDirection: sortConfig.direction,
   };
 }

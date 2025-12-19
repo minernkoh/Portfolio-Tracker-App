@@ -134,15 +134,16 @@ export function useAddTransaction() {
   return useMutation({
     mutationFn: createTransaction,
     onMutate: async (newTx) => {
-      // cancel any outgoing refetches
+      // cancel any outgoing refetches to prevent race conditions
+      // race conditions = when multiple operations compete and interfere with each other
       await queryClient.cancelQueries({ queryKey: queryKeys.transactions });
 
-      // snapshot the previous value
+      // snapshot the previous value in case of rollback
       const previousTransactions = queryClient.getQueryData(
         queryKeys.transactions
       );
 
-      // optimistically update with temporary id
+      // optimistically update UI with temporary id
       queryClient.setQueryData(queryKeys.transactions, (old = []) => [
         ...old,
         { ...newTx, id: "temp-" + Date.now() },

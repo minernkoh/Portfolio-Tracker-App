@@ -5,38 +5,38 @@
 // example: formatNumber(1.50000000) returns "1.5"
 export const formatNumber = (value, maxDecimals = 10) => {
   if (value === null || value === undefined || isNaN(value)) return "0";
-
+  
   const num = Number(value);
   if (!isFinite(num)) return String(value);
-
+  
   // handle zero
   if (num === 0) return "0";
-
+  
   // use toFixed to avoid scientific notation, then parse
   // use a higher precision to avoid rounding issues
   const fixedStr = num.toFixed(Math.max(maxDecimals, 15));
-
+  
   // split into integer and decimal parts
   const parts = fixedStr.split(".");
   let integerPart = parts[0];
   let decimalPart = parts[1] || "";
-
+  
   // limit decimal part to maxDecimals
   if (decimalPart.length > maxDecimals) {
     decimalPart = decimalPart.substring(0, maxDecimals);
   }
-
+  
   // remove trailing zeros from decimal part
   decimalPart = decimalPart.replace(/0+$/, "");
-
+  
   // format integer part with thousand separators
   const formattedInteger = Number(integerPart).toLocaleString("en-US");
-
+  
   // return formatted number
   if (decimalPart.length === 0) {
     return formattedInteger;
   }
-
+  
   return `${formattedInteger}.${decimalPart}`;
 };
 
@@ -47,32 +47,32 @@ export const formatNumber = (value, maxDecimals = 10) => {
 // example: formatPriceInput(0.00001234) returns "0.00001234"
 export const formatPriceInput = (price) => {
   if (price === null || price === undefined || isNaN(price)) return "";
-
+  
   const num = Number(price);
   if (num === 0) return "0.00";
-
+  
   // for prices $1 and above, use 2 decimal places
   if (Math.abs(num) >= 1) {
     return num.toFixed(2);
   }
-
+  
   // for prices less than $1, find significant digits
   // convert to string and find the first non-zero digit after decimal
   const str = num.toFixed(12); // high precision to find significant digits
   const decimalIndex = str.indexOf(".");
-
+  
   if (decimalIndex === -1) return num.toFixed(2);
-
+  
   const afterDecimal = str.slice(decimalIndex + 1);
   let firstNonZeroIndex = 0;
-
+  
   for (let i = 0; i < afterDecimal.length; i++) {
     if (afterDecimal[i] !== "0") {
       firstNonZeroIndex = i;
       break;
     }
   }
-
+  
   // show first significant digit + 3 more digits (4 significant figures after first non-zero)
   const decimals = Math.min(firstNonZeroIndex + 4, 10);
   return num.toFixed(decimals);
@@ -86,10 +86,10 @@ export const formatCurrency = (value, hidden = false) => {
   if (hidden) return "****";
 
   if (value === null || value === undefined || isNaN(value)) return "$0.00";
-
+  
   const num = Number(value);
   if (!isFinite(num)) return "$0.00";
-
+  
   // use javascript's built-in number formatter for US dollars
   // Intl.NumberFormat handles locale-specific formatting (commas, currency symbol)
   // always show exactly 2 decimal places for consistency
@@ -106,6 +106,74 @@ export const formatQuantity = (value) => {
   return formatNumber(value, 10);
 };
 
+// format a quantity to 4 significant figures (used for stocks shares display)
+export const formatQuantity4SF = (value) => {
+  if (value === null || value === undefined || isNaN(value)) return "0";
+  
+  const num = Number(value);
+  if (!isFinite(num)) return String(value);
+  if (num === 0) return "0";
+  
+  // convert to 4 significant figures using toPrecision
+  const precisionStr = num.toPrecision(4);
+  const precisionNum = parseFloat(precisionStr);
+  
+  // split into integer and decimal parts
+  const parts = precisionStr.split(".");
+  const integerPart = parts[0];
+  const decimalPart = parts[1] || "";
+  
+  // format integer part with thousand separators
+  const formattedInteger = Number(integerPart).toLocaleString("en-US");
+  
+  // if there's a decimal part, add it back (removing trailing zeros)
+  if (decimalPart) {
+    const cleanedDecimal = decimalPart.replace(/0+$/, "");
+    if (cleanedDecimal) {
+      return `${formattedInteger}.${cleanedDecimal}`;
+    }
+  }
+  
+  return formattedInteger;
+};
+
+// format a price with appropriate notation
+// for prices < 0.01: use scientific notation (e.g., "$7.05e-6")
+// for prices >= 0.01: use standard currency format (e.g., "$0.50")
+// for prices >= 1: use standard currency format with 2 decimals (e.g., "$1,234.56")
+export const formatPrice = (value, hidden = false) => {
+  // privacy feature - hide sensitive financial data
+  if (hidden) return "****";
+
+  if (value === null || value === undefined || isNaN(value)) return "$0.00";
+  
+  const num = Number(value);
+  if (!isFinite(num)) return "$0.00";
+  if (num === 0) return "$0.00";
+  
+  // for very small prices (< 0.01), use scientific notation
+  if (Math.abs(num) < 0.01) {
+    // format as $X.XXe±YY
+    const formatted = num.toExponential(2);
+    return `$${formatted}`;
+  }
+  
+  // for prices >= 0.01, use standard currency format
+  // use more decimal places for prices between 0.01 and 1
+  if (Math.abs(num) >= 0.01 && Math.abs(num) < 1) {
+    // show up to 4 decimal places for prices less than $1
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    }).format(num);
+  }
+  
+  // for prices >= $1, use standard 2 decimal format
+  return formatCurrency(num);
+};
+
 // truncate a string to a maximum length and add ellipsis if needed
 // example: truncateName("Apple Inc.", 10) returns "Apple Inc."
 // example: truncateName("International Business Machines Corporation", 20) returns "International Busin..."
@@ -116,18 +184,18 @@ export const truncateName = (name, maxLength = 30) => {
 };
 
 // format a date string to show date and time nicely
-// accepts either:
+// accepts either: 
 // - a full datetime string like "2024-01-15T14:30:00Z"
 // - separate date and time parameters like ("2024-01-15", "14:30")
 // example: formatDateTime("2024-01-15", "14:30") returns "2024-01-15, 14:30"
 export const formatDateTime = (dateString, timeString) => {
   if (!dateString) return "";
-
+  
   // if timeString is provided as second argument, combine them
   if (timeString) {
     return `${dateString}, ${timeString}`;
   }
-
+  
   // check if dateString already contains time (ISO format with T)
   if (dateString.includes("T")) {
     try {
@@ -138,14 +206,14 @@ export const formatDateTime = (dateString, timeString) => {
       const day = String(date.getDate()).padStart(2, "0");
       const hours = String(date.getHours()).padStart(2, "0");
       const minutes = String(date.getMinutes()).padStart(2, "0");
-
+      
       return `${year}-${month}-${day} ${hours}:${minutes}`;
     } catch (error) {
       // if parsing fails, try to clean up the string by removing T and Z
       return dateString.replace("T", " ").replace(/Z$/, "").substring(0, 16);
     }
   }
-
+  
   // if no time info, just return the date
   return dateString;
 };
@@ -166,19 +234,19 @@ export const calculateUnrealizedPnL = (quantity, avgPrice, currentPrice) => {
 // handles various input formats and normalizes to standard format
 export const normalizeAssetType = (assetType) => {
   if (!assetType) return "Stock";
-
+  
   if (typeof assetType === "string") {
     const normalized = assetType.trim().replace(/\n/g, "").toLowerCase();
     return normalized === "crypto" ? "Crypto" : "Stock";
   }
-
+  
   return "Stock";
 };
 
 // format transaction type to "Buy" or "Sell" with proper capitalization
 export const formatTransactionType = (type) => {
   if (!type) return "Buy";
-
+  
   return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
 };
 
@@ -220,12 +288,12 @@ export const calculatePortfolioData = (transactions, prices) => {
     const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
     const dateA = new Date(dateTimeA);
     const dateB = new Date(dateTimeB);
-
+    
     // primary sort: by date/time (ascending = oldest first)
     if (dateA.getTime() !== dateB.getTime()) {
       return dateA - dateB;
     }
-
+    
     // secondary sort: buys before sells (cannot sell what is not owned)
     // convert transaction type to number for sorting:
     //   - "Buy" → 0 (comes first)
@@ -276,7 +344,7 @@ export const calculatePortfolioData = (transactions, prices) => {
         price: tx.price,
         originalQuantity: tx.quantity,
       });
-      // process sell: use FIFO - sell oldest shares first (matches tax/accounting standards)
+      // process sell: use FIFO - sell oldest shares first 
       // example: buy 10 @ $100, buy 5 @ $120, sell 8 → sell 8 from first buy (cost: 8 × $100 = $800)
     } else {
       let remainingToSell = tx.quantity;

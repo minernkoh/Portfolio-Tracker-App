@@ -1,6 +1,6 @@
 # 📈 Portfolio Tracker
 
-A modern investment portfolio tracker built with React. Track your stocks and cryptocurrencies in one place with real-time price updates, visual analytics, and comprehensive transaction management. The app calculates your profit/loss using industry-standard FIFO (First In, First Out) cost basis methodology.
+A modern investment portfolio tracker built with React. Track stocks and cryptocurrencies in one place with real-time price updates, visual analytics, and comprehensive transaction management. The app calculates profit/loss using industry-standard FIFO (First In, First Out) cost basis methodology.
 
 ![image of portfolio tracker](images/portfolio-tracker_image.png)
 
