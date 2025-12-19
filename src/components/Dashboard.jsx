@@ -28,10 +28,14 @@ import {
   useAirtableStatus,
 } from "../hooks/usePortfolio";
 import { useTransactionModal } from "../hooks/useTransactionModal";
-import { EyeIcon, EyeSlashIcon, ArrowClockwiseIcon, CaretUp, CaretDown } from "@phosphor-icons/react";
+import { EyeIcon, EyeSlashIcon, ArrowClockwiseIcon, CaretUp, CaretDown, Sun, Moon } from "@phosphor-icons/react";
 import { useSort } from "../hooks/useSort";
+import { useTheme } from "../hooks/useTheme";
 
 export default function Dashboard() {
+  // theme hook
+  const { theme, toggleTheme } = useTheme();
+  
   // data fetching hooks
   const { isEnabled: isAirtableEnabled } = useAirtableStatus();
   const { data: transactions = [], isLoading, error: loadError, refetch } = useTransactions();
@@ -168,7 +172,7 @@ export default function Dashboard() {
         <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
           <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-8 max-w-md w-full">
             <div className="text-red-500 text-4xl mb-4">⚠️</div>
-            <h2 className="text-xl font-bold text-white mb-2">Failed to Load Data</h2>
+            <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">Failed to Load Data</h2>
             <p className="text-[var(--text-secondary)] mb-6">{errorMessage}</p>
             <button
               onClick={() => refetch()}
@@ -191,10 +195,10 @@ export default function Dashboard() {
           <div className="flex flex-col gap-4">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <h1 className="text-xl font-bold text-white">My Portfolio</h1>
+                <h1 className="text-xl font-bold text-[var(--text-primary)]">My Portfolio</h1>
                 <button
                   onClick={() => setHideValues((prev) => !prev)}
-                  className="text-[var(--text-secondary)] hover:text-white transition-colors"
+                  className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                   title={hideValues ? "Show values" : "Hide values"}
                 >
                   {hideValues ? <EyeSlashIcon size={18} /> : <EyeIcon size={18} />}
@@ -204,7 +208,7 @@ export default function Dashboard() {
                 )}
               </div>
               <div className="flex flex-col">
-                <span className="text-4xl font-bold text-white">{formatCurrency(totalValue, hideValues)}</span>
+                <span className="text-4xl font-bold text-[var(--text-primary)]">{formatCurrency(totalValue, hideValues)}</span>
                 <div className="flex items-center gap-3 mt-1">
                   <span className={`text-sm font-bold ${is24hPositive ? "text-green" : "text-red"}`}>
                     {is24hPositive ? "+" : ""}{formatCurrency(total24hChange, hideValues)}
@@ -233,7 +237,30 @@ export default function Dashboard() {
               onChange={setActiveTab}
             />
           </div>
-          <div className="flex flex-col items-end gap-4">
+          <div className="flex items-center gap-3">
+            <ButtonGroup
+              variant="themeToggle"
+              options={[
+                { 
+                  value: 'dark', 
+                  label: '',
+                  icon: <Moon size={14} weight="fill" />,
+                  title: 'Dark mode'
+                },
+                { 
+                  value: 'light', 
+                  label: '',
+                  icon: <Sun size={14} weight="fill" />,
+                  title: 'Light mode'
+                }
+              ]}
+              value={theme}
+              onChange={(newTheme) => {
+                if (newTheme !== theme) {
+                  toggleTheme();
+                }
+              }}
+            />
             <Button icon="plus" onClick={() => openAddModal()} disabled={isPending}>Add Transaction</Button>
           </div>
         </div>
@@ -242,7 +269,7 @@ export default function Dashboard() {
         {activeTab === "overview" && (
           <div className="space-y-6 animate-slide-up">
             {/* stats cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex flex-col sm:grid sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
               <StatCard
                 label="All-time profit/loss"
                 value={totalPnL}
@@ -300,7 +327,7 @@ export default function Dashboard() {
             {/* assets table */}
             <div>
               <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <h2 className="text-lg font-bold text-white">Assets</h2>
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">Assets</h2>
                 <ButtonGroup
                   variant="pills"
                   options={["All", "Stock", "Crypto"]}
@@ -323,7 +350,7 @@ export default function Dashboard() {
         {activeTab === "transactions" && (
           <div className="animate-slide-up bg-[var(--bg-card)] rounded-xl border border-[var(--border-subtle)] overflow-hidden min-h-[400px]">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse min-w-[700px]">
                 <thead>
                   <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-card)] cursor-pointer select-none">
                     {[
@@ -336,22 +363,22 @@ export default function Dashboard() {
                     ].map((col) => (
                       <th
                         key={col.key}
-                        className={`py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] hover:text-white ${col.align === "right" ? "text-right" : ""}`}
+                        className={`py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] whitespace-nowrap ${col.align === "right" ? "text-right" : ""}`}
                         onClick={() => handleTxSort(col.key)}
                       >
                         <div className={`flex items-center gap-1 ${col.align === "right" ? "justify-end" : ""}`}>
                           {col.label}
                           {getTxSortDirection(col.key) && (
                             getTxSortDirection(col.key) === 'asc' ? (
-                              <CaretUp size={12} weight="fill" className="text-white" />
+                              <CaretUp size={12} weight="fill" className="text-[var(--text-primary)]" />
                             ) : (
-                              <CaretDown size={12} weight="fill" className="text-white" />
+                              <CaretDown size={12} weight="fill" className="text-[var(--text-primary)]" />
                             )
                           )}
                         </div>
                     </th>
                     ))}
-                    <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right">Actions</th>
+                    <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)]">
@@ -362,10 +389,10 @@ export default function Dashboard() {
                       <tr key={tx.id} className="hover:bg-[var(--bg-card-hover)] transition-colors">
                         <td className="py-4 px-6 text-sm text-[var(--text-secondary)]">{formatDateTime(tx.date, tx.time)}</td>
                         <td className="py-4 px-6"><TransactionTypeBadge type={tx.type} variant="compact" /></td>
-                        <td className="py-4 px-6 text-sm font-bold text-white">{tx.ticker}</td>
-                        <td className="py-4 px-6 text-sm text-right text-white">{formatQuantity(tx.quantity)}</td>
+                        <td className="py-4 px-6 text-sm font-bold text-[var(--text-primary)]">{tx.ticker}</td>
+                        <td className="py-4 px-6 text-sm text-right text-[var(--text-primary)]">{formatQuantity(tx.quantity)}</td>
                         <td className="py-4 px-6 text-sm text-right text-[var(--text-secondary)]">{formatCurrency(tx.price, hideValues)}</td>
-                        <td className="py-4 px-6 text-sm text-right font-medium text-white">{formatCurrency(tx.quantity * tx.price, hideValues)}</td>
+                        <td className="py-4 px-6 text-sm text-right font-medium text-[var(--text-primary)]">{formatCurrency(tx.quantity * tx.price, hideValues)}</td>
                         <td className="py-4 px-6 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <IconButton variant="edit" onClick={() => openEditModal(tx)} disabled={deleteTransactionMutation.isPending} />

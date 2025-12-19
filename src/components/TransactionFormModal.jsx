@@ -398,7 +398,7 @@ export default function TransactionFormModal({
       className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       style={{ height: '100vh', width: '100vw', minHeight: '100vh' }}
     >
-      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl w-full max-w-md shadow-2xl overflow-hidden">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl w-[90%] sm:w-full max-w-md shadow-2xl overflow-hidden">
         {/* header */}
         <div className="p-4 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--bg-card)]">
           <h2 className="text-lg font-bold text-[var(--text-primary)]">
@@ -467,7 +467,7 @@ export default function TransactionFormModal({
                       </div>
                     )}
                     <div className="flex flex-col leading-none min-w-0">
-                      <span className="text-sm font-bold text-white truncate">{formData.name}</span>
+                      <span className="text-sm font-bold text-[var(--text-primary)] truncate">{formData.name}</span>
                       <span className="text-xs text-[var(--text-secondary)] capitalize">{formData.assetType}</span>
                     </div>
                   </div>
@@ -587,7 +587,7 @@ export default function TransactionFormModal({
                       const priceNum = parseFloat(formatted);
                       if (!isNaN(quantity) && !isNaN(priceNum) && quantity > 0 && priceNum >= 0) {
                         const total = quantity * priceNum;
-                        // Format with commas for thousands
+                        // format with commas for thousands
                         newData.totalSpent = total.toLocaleString('en-US', {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
@@ -601,8 +601,8 @@ export default function TransactionFormModal({
               placeholder={isFetchingPrice ? "Loading..." : "0.00"}
               error={errors.price}
               disabled={isSubmitting || isFetchingPrice}
-              leftIcon={<span className="text-white">$</span>}
-              rightIcon={isFetchingPrice && <SpinnerGap size={18} className="animate-spin text-white" />}
+              leftIcon={<span className="text-[var(--text-primary)]">$</span>}
+              rightIcon={isFetchingPrice && <SpinnerGap size={18} className="animate-spin text-[var(--text-primary)]" />}
             />
           </div>
 
@@ -618,7 +618,7 @@ export default function TransactionFormModal({
               error={errors.date}
               disabled={isSubmitting}
               style={{ colorScheme: "dark" }}
-              inputClassName="text-white"
+              inputClassName="text-[var(--text-primary)]"
             />
             <FormInput
               label="Time"
@@ -629,7 +629,7 @@ export default function TransactionFormModal({
               error={errors.time}
               disabled={isSubmitting}
               style={{ colorScheme: "dark" }}
-              inputClassName="text-white"
+              inputClassName="text-[var(--text-primary)]"
             />
           </div>
 
@@ -681,7 +681,7 @@ export default function TransactionFormModal({
             placeholder="0.00"
             error={errors.totalSpent}
             disabled={isSubmitting}
-            leftIcon={<span className="text-white">$</span>}
+            leftIcon={<span className="text-[var(--text-primary)]">$</span>}
             inputClassName="text-base font-bold"
           />
 

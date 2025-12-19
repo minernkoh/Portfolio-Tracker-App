@@ -17,7 +17,7 @@ export default function StatCard({
     ? isPositive
       ? 'text-green'
       : 'text-red'
-    : 'text-white';
+    : 'text-[var(--text-primary)]';
 
   const subtitleColorClass = isPositive !== undefined
     ? isPositive
@@ -39,15 +39,15 @@ export default function StatCard({
   const displaySubtitle = subtitle;
 
   return (
-    <div className="bg-[var(--bg-card)] p-4 rounded-xl border border-[var(--border-subtle)]">
-      <div className="text-[var(--text-secondary)] text-xs font-bold uppercase mb-1">
+    <div className="bg-transparent sm:bg-[var(--bg-card)] p-0 sm:p-4 rounded-none sm:rounded-xl border-b border-[var(--border-subtle)] sm:border sm:border-[var(--border-subtle)] pb-4 mb-4 sm:mb-0 last:mb-0 last:border-b-0">
+      <div className="text-[var(--text-secondary)] text-[10px] sm:text-xs font-bold uppercase mb-1">
         {label}
       </div>
-      <div className={`text-lg font-bold ${valueColorClass} ${typeof value === 'string' ? '' : 'truncate'}`}>
+      <div className={`text-sm sm:text-lg font-bold ${valueColorClass} ${typeof value === 'string' ? '' : 'truncate'}`}>
         {displayValue}
       </div>
       {displaySubtitle && (
-        <div className={`text-xs font-bold ${subtitleColorClass}`}>
+        <div className={`text-[10px] sm:text-xs font-bold ${subtitleColorClass}`}>
           {displaySubtitle}
         </div>
       )}

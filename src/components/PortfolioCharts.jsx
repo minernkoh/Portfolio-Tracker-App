@@ -1,12 +1,13 @@
 // portfolio performance and allocation charts using Recharts
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import { formatCurrency, calculateValue } from "../services/utils";
 import ButtonGroup from "./ui/ButtonGroup";
+import { useTheme } from "../hooks/useTheme";
 
 const CHART_COLORS = ["#3b82f6", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4"];
 const OTHERS_COLOR = "#9ca3af"; // light grey for "Others" category
@@ -32,7 +33,7 @@ const PerformanceTooltip = ({ active, payload, hideValues }) => {
   return (
     <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] p-3 rounded-lg shadow-xl">
       <p className="text-[var(--text-secondary)] text-xs mb-1">{payload[0].payload.date}</p>
-      <p className="text-white font-bold">{formatCurrency(payload[0].value, hideValues)}</p>
+      <p className="text-[var(--text-primary)] font-bold">{formatCurrency(payload[0].value, hideValues)}</p>
       {payload[0].payload.costBasis !== undefined && (
         <p className="text-[var(--text-secondary)] text-xs mt-1">
           Cost: {formatCurrency(payload[0].payload.costBasis, hideValues)}
@@ -138,6 +139,9 @@ const calculateHistoryData = (transactions, prices, portfolioData, totalValue, t
 
 export default function PortfolioCharts({ portfolioData, transactions = [], prices = {}, hideValues = false }) {
   const [timePeriod, setTimePeriod] = useState("all");
+  const [activeView, setActiveView] = useState("performance"); // for mobile toggle
+  const { theme } = useTheme();
+  const isLightMode = theme === 'light';
 
   const totalValue = portfolioData.reduce((acc, curr) => acc + curr.totalValue, 0);
 
@@ -169,139 +173,284 @@ export default function PortfolioCharts({ portfolioData, transactions = [], pric
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="lg:col-span-2 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-12 text-center flex flex-col items-center justify-center min-h-[300px]">
-          <h3 className="text-lg font-bold text-white mb-2">No portfolio data</h3>
+          <h3 className="text-lg font-bold text-[var(--text-primary)] mb-2">No portfolio data</h3>
           <p className="text-[var(--text-secondary)]">Add your first transaction to see visual analytics.</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {/* performance chart */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-            <h2 className="text-white font-bold text-sm">Performance</h2>
-          <ButtonGroup
-            variant="pills"
-            options={TIME_PERIODS}
-            value={timePeriod}
-            onChange={setTimePeriod}
-            labelMap={{ "7d": "7D", "1m": "1M", "3m": "3M", ytd: "YTD", "1y": "1Y", all: "ALL" }}
-          />
-        </div>
-
-        {historyData.length > 0 ? (
-          <div className="h-[260px] w-full relative" style={{ minWidth: 0 }}>
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={historyData}>
-                <defs>
-                  <linearGradient id="gradientChart" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={chartColor} stopOpacity={0.1} />
-                    <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="0" stroke="#27272a" vertical={false} />
-                <XAxis
-                  dataKey="date" stroke="#52525b"
-                  tick={{ fill: "#71717a", fontSize: 10, fontWeight: 500 }}
-                  tickLine={false} axisLine={false} dy={10} minTickGap={10} interval="preserveStartEnd"
-                />
-                <YAxis
-                  stroke="#52525b"
-                  tick={{ fill: "#71717a", fontSize: 10, fontWeight: 500 }}
-                  tickFormatter={(v) => hideValues ? "****" : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}
-                  tickLine={false} axisLine={false} orientation="right" domain={["auto", "auto"]}
-                />
-                <Tooltip content={<PerformanceTooltip hideValues={hideValues} />} cursor={{ stroke: "#52525b", strokeDasharray: "4 4" }} />
-                <Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={2} fill="url(#gradientChart)" animationDuration={1000} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="flex-1 min-h-[260px] flex flex-col items-center justify-center">
-            <div className="text-sm text-[var(--text-secondary)] mb-2">No transaction history</div>
-            <div className="text-xs text-[var(--text-secondary)]">Add transactions to see portfolio performance over time</div>
-          </div>
-        )}
+  // performance chart content
+  const PerformanceChart = () => (
+    <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <h2 className="text-[var(--text-primary)] font-bold text-sm">Performance</h2>
+        <ButtonGroup
+          variant="pills"
+          options={TIME_PERIODS}
+          value={timePeriod}
+          onChange={setTimePeriod}
+          labelMap={{ "7d": "7D", "1m": "1M", "3m": "3M", ytd: "YTD", "1y": "1Y", all: "ALL" }}
+        />
       </div>
 
-      {/* allocation chart */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col" style={{ overflow: 'visible' }}>
-        <div className="mb-6">
-          <h2 className="text-white font-bold text-sm">Allocation</h2>
-          <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">Distribution by Asset Value</p>
+      {historyData.length > 0 ? (
+        <div className="h-[260px] w-full relative" style={{ minWidth: 0 }}>
+          <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={historyData}>
+              <defs>
+                <linearGradient id="gradientChart" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={chartColor} stopOpacity={0.1} />
+                  <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="0" stroke="#27272a" vertical={false} />
+              <XAxis
+                dataKey="date" stroke="#52525b"
+                tick={{ fill: "#71717a", fontSize: 10, fontWeight: 500 }}
+                tickLine={false} axisLine={false} dy={10} minTickGap={10} interval="preserveStartEnd"
+              />
+              <YAxis
+                stroke="#52525b"
+                tick={{ fill: "#71717a", fontSize: 10, fontWeight: 500 }}
+                tickFormatter={(v) => hideValues ? "****" : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}
+                tickLine={false} axisLine={false} orientation="right" domain={["auto", "auto"]}
+              />
+              <Tooltip content={<PerformanceTooltip hideValues={hideValues} />} cursor={{ stroke: "#52525b", strokeDasharray: "4 4" }} />
+              <Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={2} fill="url(#gradientChart)" animationDuration={1000} />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
+      ) : (
+        <div className="flex-1 min-h-[260px] flex flex-col items-center justify-center">
+          <div className="text-sm text-[var(--text-secondary)] mb-2">No transaction history</div>
+          <div className="text-xs text-[var(--text-secondary)]">Add transactions to see portfolio performance over time</div>
+        </div>
+      )}
+    </div>
+  );
 
-        <div className="flex-1 flex flex-col sm:flex-row items-center justify-between gap-2" style={{ overflow: 'visible' }}>
-          {allocationData.length > 0 ? (
-            <div className="relative w-full sm:w-[70%] lg:w-[60%] h-[260px] overflow-visible" style={{ minWidth: 0 }}>
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
+  // allocation chart content
+  const AllocationChart = () => (
+    <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col" style={{ overflow: 'visible' }}>
+      <div className="mb-6">
+        <h2 className="text-[var(--text-primary)] font-bold text-sm">Allocation</h2>
+        <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">Distribution by Asset Value</p>
+      </div>
+
+      <div className="flex-1 flex flex-col sm:flex-row items-center justify-between gap-2" style={{ overflow: 'visible' }}>
+        {allocationData.length > 0 ? (
+          <div className="relative w-full sm:w-[70%] lg:w-[60%] h-[260px] overflow-visible" style={{ minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                {!isLightMode && (
                   <defs>
                     <filter id="glow-pie" x="-50%" y="-50%" width="200%" height="200%">
                       <feGaussianBlur stdDeviation="4" result="coloredBlur" />
                       <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
                     </filter>
                   </defs>
-                  <Pie
-                    data={allocationData} cx="50%" cy="50%"
-                    innerRadius="55%" outerRadius="80%"
-                    paddingAngle={3} dataKey="value" stroke="none"
-                    style={{ filter: "url(#glow-pie)" }}
-                  >
-                    {allocationData.map((entry, i) => (
-                      <Cell key={i} fill={entry.name === "Others" ? OTHERS_COLOR : CHART_COLORS[i % CHART_COLORS.length]} stroke="rgba(0,0,0,0)" />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#18181b", borderColor: "#27272a", borderRadius: "8px" }}
-                    itemStyle={{ color: "#fff" }}
-                    formatter={(v) => formatCurrency(v, hideValues)}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="text-center">
-                  <div className="text-sm font-bold text-white">{formatCurrency(totalValue, hideValues)}</div>
-                </div>
-              </div>
+                )}
+                <Pie
+                  data={allocationData} cx="50%" cy="50%"
+                  innerRadius="55%" outerRadius="80%"
+                  paddingAngle={3} dataKey="value" stroke="none"
+                  style={isLightMode ? {} : { filter: "url(#glow-pie)" }}
+                >
+                  {allocationData.map((entry, i) => (
+                    <Cell key={i} fill={entry.name === "Others" ? OTHERS_COLOR : CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ 
+                    backgroundColor: isLightMode ? "#f9fafb" : "#18181b", 
+                    borderColor: isLightMode ? "rgba(209, 213, 219, 0.6)" : "#27272a", 
+                    borderRadius: "8px" 
+                  }}
+                  itemStyle={{ color: isLightMode ? "#111827" : "#fff" }}
+                  formatter={(v) => formatCurrency(v, hideValues)}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="w-full sm:w-[70%] lg:w-[60%] flex-1 min-h-[260px] flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-sm text-[var(--text-secondary)] mb-2">No allocation data</div>
+              <div className="text-xs text-[var(--text-secondary)]">Add transactions with positive values to see allocation</div>
             </div>
-          ) : (
-            <div className="w-full sm:w-[70%] lg:w-[60%] flex-1 min-h-[260px] flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-sm text-[var(--text-secondary)] mb-2">No allocation data</div>
-                <div className="text-xs text-[var(--text-secondary)]">Add transactions with positive values to see allocation</div>
-              </div>
-            </div>
-          )}
+          </div>
+        )}
 
-          {/* legend */}
-          <div className="w-full sm:w-[30%] lg:w-[40%] flex-1 custom-scrollbar" style={{ overflowY: 'auto', paddingLeft: '18px', paddingRight: '10px' }}>
-            <div className="space-y-1.5">
-              {allocationData.map((entry, i) => {
-                const color = entry.name === "Others" ? OTHERS_COLOR : CHART_COLORS[i % CHART_COLORS.length];
-                return (
-                <div key={entry.name} className="flex items-center justify-between text-xs gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <div className="w-3 h-3 flex items-center justify-center flex-shrink-0" style={{ marginLeft: '-4px', marginRight: '4px' }}>
-                      <div
-                        className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }}
-                      />
-                    </div>
-                    <span className="text-[var(--text-secondary)] font-medium text-[11px]" title={entry.name}>{entry.name}</span>
+        {/* legend */}
+        <div className="w-full sm:w-[30%] lg:w-[40%] flex-1 custom-scrollbar" style={{ overflowY: 'auto', paddingLeft: '18px', paddingRight: '10px' }}>
+          <div className="space-y-1.5">
+            {allocationData.map((entry, i) => {
+              const color = entry.name === "Others" ? OTHERS_COLOR : CHART_COLORS[i % CHART_COLORS.length];
+              return (
+              <div key={entry.name} className="flex items-center justify-between text-xs gap-2">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <div className="w-3 h-3 flex items-center justify-center flex-shrink-0" style={{ marginLeft: '-4px', marginRight: '4px' }}>
+                    <div
+                      className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: color, boxShadow: isLightMode ? 'none' : `0 0 6px ${color}` }}
+                    />
                   </div>
-                  <span className="text-white font-bold text-[11px] flex-shrink-0">
-                    {hideValues ? "**" : ((entry.value / totalValue) * 100).toFixed(1)}%
-                  </span>
+                  <span className="text-[var(--text-secondary)] font-medium text-[11px]" title={entry.name}>{entry.name}</span>
                 </div>
-                );
-              })}
-            </div>
+                <span className="text-[var(--text-primary)] font-bold text-[11px] flex-shrink-0">
+                  {hideValues ? "**" : ((entry.value / totalValue) * 100).toFixed(1)}%
+                </span>
+              </div>
+              );
+            })}
           </div>
         </div>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* mobile/tablet: combined card with toggle */}
+      <div className="lg:hidden">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl p-6 flex flex-col">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+            <ButtonGroup
+              variant="pills"
+              options={["performance", "allocation"]}
+              value={activeView}
+              onChange={setActiveView}
+              labelMap={{ performance: "Performance", allocation: "Allocation" }}
+            />
+            {activeView === "performance" && (
+              <ButtonGroup
+                variant="pills"
+                options={TIME_PERIODS}
+                value={timePeriod}
+                onChange={setTimePeriod}
+                labelMap={{ "7d": "7D", "1m": "1M", "3m": "3M", ytd: "YTD", "1y": "1Y", all: "ALL" }}
+              />
+            )}
+          </div>
+          
+          {activeView === "performance" ? (
+            <div>
+              {historyData.length > 0 ? (
+                <div className="h-[260px] w-full relative" style={{ minWidth: 0 }}>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <AreaChart data={historyData}>
+                      <defs>
+                        <linearGradient id="gradientChartMobile" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={chartColor} stopOpacity={0.1} />
+                          <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="0" stroke="#27272a" vertical={false} />
+                      <XAxis
+                        dataKey="date" stroke="#52525b"
+                        tick={{ fill: "#71717a", fontSize: 10, fontWeight: 500 }}
+                        tickLine={false} axisLine={false} dy={10} minTickGap={10} interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        stroke="#52525b"
+                        tick={{ fill: "#71717a", fontSize: 10, fontWeight: 500 }}
+                        tickFormatter={(v) => hideValues ? "****" : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}
+                        tickLine={false} axisLine={false} orientation="right" domain={["auto", "auto"]}
+                      />
+                      <Tooltip content={<PerformanceTooltip hideValues={hideValues} />} cursor={{ stroke: "#52525b", strokeDasharray: "4 4" }} />
+                      <Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={2} fill="url(#gradientChartMobile)" animationDuration={1000} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="flex-1 min-h-[260px] flex flex-col items-center justify-center">
+                  <div className="text-sm text-[var(--text-secondary)] mb-2">No transaction history</div>
+                  <div className="text-xs text-[var(--text-secondary)]">Add transactions to see portfolio performance over time</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ overflow: 'visible' }}>
+              <div className="flex-1 flex flex-col sm:flex-row items-center justify-between gap-2" style={{ overflow: 'visible' }}>
+                {allocationData.length > 0 ? (
+                  <div className="relative w-full sm:w-[70%] h-[260px] overflow-visible" style={{ minWidth: 0 }}>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <PieChart>
+                        {!isLightMode && (
+                          <defs>
+                            <filter id="glow-pie-mobile" x="-50%" y="-50%" width="200%" height="200%">
+                              <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+                              <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                            </filter>
+                          </defs>
+                        )}
+                        <Pie
+                          data={allocationData} cx="50%" cy="50%"
+                          innerRadius="55%" outerRadius="80%"
+                          paddingAngle={3} dataKey="value" stroke="none"
+                          style={isLightMode ? {} : { filter: "url(#glow-pie-mobile)" }}
+                        >
+                          {allocationData.map((entry, i) => (
+                            <Cell key={i} fill={entry.name === "Others" ? OTHERS_COLOR : CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{ 
+                            backgroundColor: isLightMode ? "#f9fafb" : "#18181b", 
+                            borderColor: isLightMode ? "rgba(209, 213, 219, 0.6)" : "#27272a", 
+                            borderRadius: "8px" 
+                          }}
+                          itemStyle={{ color: isLightMode ? "#111827" : "#fff" }}
+                          formatter={(v) => formatCurrency(v, hideValues)}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="w-full sm:w-[70%] flex-1 min-h-[260px] flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-sm text-[var(--text-secondary)] mb-2">No allocation data</div>
+                      <div className="text-xs text-[var(--text-secondary)]">Add transactions with positive values to see allocation</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* legend */}
+                <div className="w-full sm:w-[30%] flex-1 custom-scrollbar" style={{ overflowY: 'auto', paddingLeft: '18px', paddingRight: '10px' }}>
+                  <div className="space-y-1.5">
+                    {allocationData.map((entry, i) => {
+                      const color = entry.name === "Others" ? OTHERS_COLOR : CHART_COLORS[i % CHART_COLORS.length];
+                      return (
+                      <div key={entry.name} className="flex items-center justify-between text-xs gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <div className="w-3 h-3 flex items-center justify-center flex-shrink-0" style={{ marginLeft: '-4px', marginRight: '4px' }}>
+                            <div
+                              className="w-2 h-2 rounded-full"
+                                style={{ backgroundColor: color, boxShadow: isLightMode ? 'none' : `0 0 6px ${color}` }}
+                            />
+                          </div>
+                          <span className="text-[var(--text-secondary)] font-medium text-[11px]" title={entry.name}>{entry.name}</span>
+                        </div>
+                        <span className="text-[var(--text-primary)] font-bold text-[11px] flex-shrink-0">
+                          {hideValues ? "**" : ((entry.value / totalValue) * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* desktop: side-by-side layout */}
+      <div className="hidden lg:grid lg:grid-cols-2 gap-4">
+        <PerformanceChart />
+        <AllocationChart />
+      </div>
+    </>
   );
 }

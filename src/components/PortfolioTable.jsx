@@ -56,13 +56,13 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
   return (
     <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-subtle)] overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
+        <table className="w-full text-left border-collapse min-w-[800px]">
           <thead>
             <tr className="border-b border-[var(--border-subtle)] cursor-pointer select-none">
               {COLUMNS.map((col) => (
                 <th
                   key={col.key}
-                  className={`py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] hover:text-white transition-colors ${
+                  className={`py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors whitespace-nowrap ${
                     col.align === 'right' ? 'text-right' : ''
                   }`}
                   style={{ width: col.width }}
@@ -72,15 +72,15 @@ export default function PortfolioTable({ data, hideValues, onDeleteAsset, onAddT
                     {col.label}
                     {getSortDirection(col.key) && (
                       getSortDirection(col.key) === 'asc' ? (
-                        <CaretUp size={12} weight="fill" className="text-white" />
+                        <CaretUp size={12} weight="fill" className="text-[var(--text-primary)]" />
                       ) : (
-                        <CaretDown size={12} weight="fill" className="text-white" />
+                        <CaretDown size={12} weight="fill" className="text-[var(--text-primary)]" />
                       )
                     )}
                   </div>
                 </th>
               ))}
-              <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right" style={{ width: '10%' }}>Actions</th>
+              <th className="py-4 px-6 text-xs font-semibold text-[var(--text-secondary)] text-right whitespace-nowrap" style={{ width: '10%' }}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-subtle)]">
@@ -165,7 +165,7 @@ function AssetRow({
       {/* 24h change */}
       <td className={`py-4 px-6 text-right text-sm font-medium whitespace-nowrap ${change24h.isPositive ? 'text-green' : 'text-red'}`}>
         <div className="flex items-center gap-1 justify-end">
-          {change24h.isPositive ? <CaretUp size={14} weight="fill" /> : <CaretDown size={14} weight="fill" />}
+          {change24h.isPositive ? <CaretUp size={12} weight="fill" /> : <CaretDown size={12} weight="fill" />}
           <span>{change24h.formatted}%</span>
         </div>
       </td>

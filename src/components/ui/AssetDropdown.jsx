@@ -44,10 +44,10 @@ function AssetDropdownItem({ asset, onSelect }) {
           <img src={logo} alt="" className="w-6 h-6 rounded-full" />
         )}
         <div>
-          <span className="font-bold text-white text-sm block">
+          <span className="font-bold text-[var(--text-primary)] text-sm block">
             {asset.ticker}
           </span>
-          <span className="text-xs text-[var(--text-secondary)] group-hover:text-white transition-colors">
+          <span className="text-xs text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
             {asset.name}
           </span>
         </div>

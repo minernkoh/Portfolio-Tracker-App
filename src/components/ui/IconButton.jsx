@@ -7,7 +7,7 @@ import { PencilSimpleIcon, TrashIcon, PlusIcon, DotsThreeIcon, XIcon } from '@ph
 const VARIANTS = {
   edit: {
     icon: PencilSimpleIcon,
-    hoverColor: 'hover:text-white',
+    hoverColor: 'hover:text-[var(--text-primary)]',
     defaultTitle: 'Edit',
     weight: 'regular',
   },
@@ -19,7 +19,7 @@ const VARIANTS = {
   },
   add: {
     icon: PlusIcon,
-    hoverColor: 'hover:text-white',
+    hoverColor: 'hover:text-[var(--text-primary)]',
     defaultTitle: 'Add',
     weight: 'bold',
   },
@@ -31,7 +31,7 @@ const VARIANTS = {
   },
   close: {
     icon: XIcon,
-    hoverColor: 'hover:text-white',
+    hoverColor: 'hover:text-[var(--text-primary)]',
     defaultTitle: 'Close',
     weight: 'regular',
   },

@@ -6,6 +6,23 @@ import './index.css'
 import App from './App.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
 
+// initialize theme on page load
+const initializeTheme = () => {
+  const themeKey = 'portfolio-tracker-theme';
+  const savedTheme = localStorage.getItem(themeKey);
+  const root = document.documentElement;
+  
+  if (savedTheme === 'light') {
+    root.classList.add('light-mode');
+    root.classList.remove('dark-mode');
+  } else {
+    root.classList.add('dark-mode');
+    root.classList.remove('light-mode');
+  }
+};
+
+initializeTheme();
+
 // create a query client with default options
 const queryClient = new QueryClient({
   defaultOptions: {

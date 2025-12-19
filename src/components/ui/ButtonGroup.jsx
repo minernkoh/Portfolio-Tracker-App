@@ -7,16 +7,16 @@ const VARIANT_STYLES = {
   // pills variant - used for asset type filters (All/Stock/Crypto)
   pills: {
     container: 'bg-[var(--bg-card)] border border-[var(--border-subtle)] p-1 rounded-lg flex items-center gap-1 w-fit',
-    button: 'px-3 py-1 text-xs font-bold rounded-md transition-all',
-    active: 'bg-[var(--border-highlight)] text-white shadow-sm',
-    inactive: 'text-[var(--text-secondary)] hover:text-white',
+    button: 'px-3 py-2 text-xs font-bold rounded-md transition-all flex items-center justify-center',
+    active: 'bg-[var(--border-highlight)] text-[var(--text-primary)] shadow-sm',
+    inactive: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
   },
   // tabs variant - used for overview/transactions tabs
   tabs: {
     container: 'flex gap-4 border-b border-[var(--border-subtle)] w-fit',
     button: 'pb-2 text-sm font-bold transition-all border-b-2',
-    active: 'border-[var(--accent-blue)] text-white',
-    inactive: 'border-transparent text-[var(--text-secondary)] hover:text-white',
+    active: 'border-[var(--accent-blue)] text-[var(--text-primary)]',
+    inactive: 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
   },
   // toggle variant - used for buy/sell and stock/crypto toggles in forms
   toggle: {
@@ -25,6 +25,21 @@ const VARIANT_STYLES = {
     active: 'bg-[var(--accent-blue)] text-white shadow-lg',
     inactive: 'text-[var(--text-secondary)] hover:text-white',
     disabled: 'text-[var(--text-secondary)] opacity-50 cursor-not-allowed',
+  },
+  // icon toggle variant - compact icon-only toggle for theme switcher
+  iconToggle: {
+    container: 'flex gap-1 p-0.5 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg',
+    button: 'p-2 rounded-md transition-all flex items-center justify-center',
+    active: 'bg-[var(--accent-blue)] text-white shadow-sm',
+    inactive: 'text-[var(--text-secondary)] hover:text-white hover:bg-[var(--bg-card-hover)]',
+    disabled: 'text-[var(--text-secondary)] opacity-50 cursor-not-allowed',
+  },
+  // theme toggle variant - matches button height, icon-only toggle for theme switcher
+  themeToggle: {
+    container: 'bg-[var(--bg-card)] border border-[var(--border-subtle)] p-1 rounded-lg flex items-center gap-1 w-fit',
+    button: 'px-3 py-2 text-sm font-bold rounded-md transition-all flex items-center justify-center',
+    active: 'bg-[var(--border-highlight)] text-[var(--text-primary)] shadow-sm',
+    inactive: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
   },
 };
 
@@ -57,9 +72,9 @@ export default function ButtonGroup({
     return opt;
   });
 
-  const containerClass = variant === 'toggle' && error
+  const containerClass = (variant === 'toggle' || variant === 'iconToggle' || variant === 'themeToggle') && error
     ? `${styles.container} border-red-500`
-    : `${styles.container} ${variant === 'toggle' ? 'border-[var(--border-subtle)]' : ''}`;
+    : `${styles.container} ${(variant === 'toggle' || variant === 'iconToggle' || variant === 'themeToggle') ? 'border-[var(--border-subtle)]' : ''}`;
 
   return (
     <div className={className}>
@@ -90,8 +105,15 @@ export default function ButtonGroup({
               onClick={() => !isDisabled && onChange(option.value)}
               disabled={isDisabled}
               className={buttonClass}
+              title={option.title || option.label}
             >
-              {option.label}
+              {option.icon && option.label ? (
+                <span className="flex items-center justify-center">{option.icon}{option.label}</span>
+              ) : option.icon ? (
+                <span className="flex items-center justify-center">{option.icon}</span>
+              ) : (
+                option.label
+              )}
             </button>
           );
         })}

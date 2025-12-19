@@ -6,7 +6,7 @@ import Layout from '../Layout';
 
 export default function LoadingState({ message = 'Loading data...', fullScreen = true }) {
   const content = (
-    <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-white/50">
+    <div className="min-h-screen bg-[var(--bg-app)] flex items-center justify-center text-[var(--text-secondary)]">
       {message}
     </div>
   );
