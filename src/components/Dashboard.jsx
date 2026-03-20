@@ -38,12 +38,13 @@ export default function Dashboard() {
   const { theme, toggleTheme } = useTheme();
   
   const navigate = useNavigate();
-  const { signOut, isAdmin, user } = useAuth();
+  const { signOut, isAdmin, user, loading: authLoading } = useAuth();
 
   const handleSignOut = useCallback(async () => {
     await signOut();
     navigate("/login", { replace: true });
   }, [signOut, navigate]);
+
   const { data: transactions = [], isLoading, error: loadError, refetch } = useTransactions();
   const { prices, isFetching: pricesFetching } = usePrices(transactions);
   const deleteAsset = useDeleteAsset();
@@ -165,7 +166,7 @@ export default function Dashboard() {
   }, [portfolioData, filterType]);
 
   // loading state
-  if (isLoading) return <LoadingState fullScreen={false} />;
+  if (authLoading || isLoading) return <LoadingState fullScreen={false} />;
 
   // error state
   if (loadError) {

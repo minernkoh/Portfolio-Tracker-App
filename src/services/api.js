@@ -4,8 +4,7 @@
 import { getFromCache, setToCache, getAnyCached, getCachedBatch, getSimpleCache, setSimpleCache } from './cache';
 import { CRYPTO_MAP } from '../constants/assets';
 
-const TWELVE_DATA_API_KEY = import.meta.env.VITE_TWELVE_DATA_API_KEY;
-const COINGECKO_API_KEY = import.meta.env.VITE_COINGECKO_API_KEY;
+// Same-origin proxy adds keys server-side (dev/preview); never embed secrets in the client bundle.
 
 const CACHE_KEY_STOCKS = "portfolio_price_cache_stocks";
 const CACHE_KEY_CRYPTO = "portfolio_price_cache_crypto";
@@ -151,27 +150,17 @@ export const fetchStockPrices = async (tickers = []) => {
     return priceMap;
   }
 
-  if (!TWELVE_DATA_API_KEY) {
-    console.warn("TwelveData API key not found");
-    uncachedTickers.forEach((ticker) => {
-      const cached = getAnyCached(CACHE_KEY_STOCKS, ticker);
-      priceMap[ticker] = cached 
-        ? { ...cached, logo: getStockLogo(ticker) }
-        : { currentPrice: 0, priceChange24h: 0, logo: getStockLogo(ticker), name: null };
-    });
-    return priceMap;
-  }
-
   try {
     // batch request: fetch all uncached symbols in one API call
     // this is more efficient than individual requests and reduces rate limit usage
-    const symbolsParam = uncachedTickers.join(',');
+    const symbolsParam = uncachedTickers.map((t) => encodeURIComponent(t.trim())).join(",");
     logApiRequest('twelveData', uncachedTickers);
-    const response = await fetch(
-      `https://api.twelvedata.com/quote?symbol=${symbolsParam}&apikey=${TWELVE_DATA_API_KEY}`
-    );
+    const response = await fetch(`/api/twelve-data/quote?symbol=${symbolsParam}`);
 
     if (!response.ok) {
+      if (response.status === 503) {
+        console.warn("TwelveData unavailable (proxy not configured or server error)");
+      }
       // handle rate limiting or API errors gracefully
       if (isRateLimited(response)) {
         console.warn("TwelveData rate limit hit, using cache");
@@ -236,11 +225,9 @@ const searchCryptoByTicker = async (ticker) => {
   if (cache[ticker]) return cache[ticker];
 
   try {
-    const headers = COINGECKO_API_KEY ? { "x-cg-demo-api-key": COINGECKO_API_KEY } : {};
     logApiRequest('coinGeckoSearch', [ticker]);
     const response = await fetch(
-      `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(ticker)}`,
-      { headers }
+      `/api/coingecko/v3/search?query=${encodeURIComponent(ticker)}`
     );
 
     if (!response.ok) return null;
@@ -333,11 +320,9 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
     if (cryptoIds.length === 0) return populateCryptoLogos(priceMap);
 
     // batch fetch prices for all crypto IDs (one API call)
-    const headers = COINGECKO_API_KEY ? { "x-cg-demo-api-key": COINGECKO_API_KEY } : {};
     logApiRequest('coinGecko', uncachedTickers);
     const response = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoIds.join(",")}&vs_currencies=usd&include_24hr_change=true`,
-      { headers }
+      `/api/coingecko/v3/simple/price?ids=${encodeURIComponent(cryptoIds.join(","))}&vs_currencies=usd&include_24hr_change=true`
     );
 
     if (!response.ok) {

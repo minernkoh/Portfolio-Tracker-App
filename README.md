@@ -93,7 +93,7 @@ See `.env.example`. Important:
 
 **JWT and localStorage:** Supabase stores the session JWT in `localStorage` by default. That is normal for SPAs. Do not ship the **service role** key in Vite—anything prefixed with `VITE_` is embedded in the client bundle.
 
-Optional market data keys (`VITE_TWELVE_DATA_API_KEY`, `VITE_COINGECKO_API_KEY`) are also exposed to the browser; prefer URL-restricted or low-privilege keys where the provider allows it.
+Prefer `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` (no `VITE_` prefix) so market keys stay server-side in dev/preview via the Vite proxy. See **Market data keys** below.
 
 ## ▲ Deploying to Vercel
 
@@ -125,3 +125,9 @@ Field names in the app UI (e.g. “Order Type”, “Asset Class”) still map t
 - Dividend and income tracking
 - Price alerts and notifications
 - PWA support for offline access
+
+## 📈 Market data keys (dev / preview)
+
+Stock and crypto price requests go to same-origin `/api/twelve-data/*` and `/api/coingecko/*`. In **development** and **`vite preview`**, `vite-plugins/secureApiProxy.js` forwards those routes and attaches `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` from `.env` on the server side so they are not embedded in the JS bundle.
+
+For **production on Vercel**, configure [Vercel serverless functions](https://vercel.com/docs/functions) or another backend that implements the same `/api/*` paths, or accept degraded pricing when those routes are unavailable.
