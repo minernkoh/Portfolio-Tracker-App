@@ -109,20 +109,28 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ## 🔐 Environment Variables
 
-Create a `.env` file in the root directory:
+**Do not use `VITE_` prefixes for API keys.** In Vite, any `VITE_*` variable is compiled into the browser bundle, so anyone can read it. This app keeps secrets on the server and exposes only same-origin `/api/*` routes (via the Vite dev server and `vite preview`).
+
+Create a `.env` file in the root directory (see `.env.example`):
 
 ```env
-# Airtable Configuration
-VITE_AIRTABLE_API_KEY=your_airtable_api_key
-VITE_AIRTABLE_BASE_ID=your_airtable_base_id
-VITE_AIRTABLE_TABLE_ID=your_airtable_table_id  # Optional
+# Airtable (required for transactions)
+AIRTABLE_API_KEY=your_airtable_personal_access_token
+AIRTABLE_BASE_ID=your_airtable_base_id
+AIRTABLE_TABLE_ID=your_airtable_table_id  # Optional; default exists in code
 
-# TwelveData API (for stock prices)
-VITE_TWELVE_DATA_API_KEY=your_twelvedata_api_key
+# TwelveData (stock prices)
+TWELVE_DATA_API_KEY=your_twelvedata_api_key
 
-# CoinGecko API (optional, works without key but with rate limits)
-VITE_COINGECKO_API_KEY=your_coingecko_api_key
+# CoinGecko (optional; improves rate limits)
+COINGECKO_API_KEY=your_coingecko_demo_api_key
 ```
+
+During migration, the dev/preview proxy also reads legacy `VITE_*` names for the same variables so old `.env` files keep working—but you should rename them to the names above so secrets are never intended for client exposure.
+
+### Production builds
+
+`npm run build` outputs static files only. They do not contain your keys, but the browser still calls `/api/...`, so you must serve the app behind a host that implements the same proxy routes (Node server, serverless functions, etc.). `npm run preview` runs Vite’s preview server with the proxy for local testing of production assets.
 
 ## 🗄️ Airtable Schema
 

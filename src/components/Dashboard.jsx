@@ -37,7 +37,7 @@ export default function Dashboard() {
   const { theme, toggleTheme } = useTheme();
   
   // data fetching hooks
-  const { isEnabled: isAirtableEnabled } = useAirtableStatus();
+  const { isEnabled: isAirtableEnabled, isStatusPending } = useAirtableStatus();
   const { data: transactions = [], isLoading, error: loadError, refetch } = useTransactions();
   const { prices, isFetching: pricesFetching } = usePrices(transactions);
   const deleteAsset = useDeleteAsset();
@@ -159,12 +159,12 @@ export default function Dashboard() {
   }, [portfolioData, filterType]);
 
   // loading state
-  if (isLoading) return <LoadingState fullScreen={false} />;
+  if (isStatusPending || isLoading) return <LoadingState fullScreen={false} />;
 
   // error state
   if (loadError || (!isAirtableEnabled && transactions.length === 0)) {
     const errorMessage = !isAirtableEnabled
-      ? "Airtable configuration missing. Please add your API keys to .env file."
+      ? "Airtable configuration missing. Set AIRTABLE_API_KEY and AIRTABLE_BASE_ID in .env (server-side names; never use VITE_ for secrets)."
       : loadError?.message || "Failed to load portfolio data. Please try again.";
 
     return (
