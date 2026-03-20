@@ -2,13 +2,8 @@
 
 import { normalizeAssetType, formatTransactionType } from "./utils";
 
-// get api credentials from environment variables (stored in .env file)
-const API_KEY = import.meta.env.VITE_AIRTABLE_API_KEY;
-const BASE_ID = import.meta.env.VITE_AIRTABLE_BASE_ID;
-// table id - can be overridden via env var, otherwise uses default
-const TABLE_ID = import.meta.env.VITE_AIRTABLE_TABLE_ID || "tblmeRh5qtO0IXt1V";
-
-const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`;
+// Credentials stay on the server; the Vite dev/preview proxy forwards to Airtable.
+const RECORDS_BASE = "/api/airtable/records";
 
 // field ids - using ids instead of names so it works even if field names change
 // this makes the code more stable and prevents errors if someone renames fields in airtable
@@ -88,11 +83,7 @@ const parseDatetime = (datetime) => {
   }
 };
 
-// headers needed for all airtable api requests
-// authorization identifies the requester (using api key)
-// content-type indicates json data is being sent
-const headers = {
-  Authorization: `Bearer ${API_KEY}`,
+const jsonHeaders = {
   "Content-Type": "application/json",
 };
 
@@ -124,20 +115,19 @@ const buildAirtableFields = (
 // fetch all transactions from airtable
 // this function gets all the buy/sell records stored
 export const fetchTransactions = async () => {
-  // check if required credentials are present
-  if (!API_KEY || !BASE_ID) {
-    console.warn("airtable credentials missing");
-    return [];
-  }
-
   try {
     // make a request to airtable to get all records
     // sort by date field descending (newest first) so latest transactions appear first
     // using field id instead of field name for stability
     const response = await fetch(
-      `${BASE_URL}?sort[0][field]=${FIELD_IDS.DATE}&sort[0][direction]=desc`,
-      { headers }
+      `${RECORDS_BASE}?sort[0][field]=${FIELD_IDS.DATE}&sort[0][direction]=desc`,
+      { headers: jsonHeaders }
     );
+
+    if (response.status === 503) {
+      console.warn("airtable credentials missing");
+      return [];
+    }
 
     // check if request was successful
     if (!response.ok) {
@@ -193,9 +183,6 @@ export const fetchTransactions = async () => {
 // create a new transaction in airtable
 // this function saves a new buy/sell record to the database
 export const createTransaction = async (transaction) => {
-  // check if credentials are present
-  if (!API_KEY || !BASE_ID) return null;
-
   // calculate total cost from quantity * price
   // preserve exact price value to avoid precision loss
   // keep original price as-is (might be string or number) to preserve full precision
@@ -226,9 +213,9 @@ export const createTransaction = async (transaction) => {
   );
 
   try {
-    const response = await fetch(BASE_URL, {
+    const response = await fetch(RECORDS_BASE, {
       method: "POST",
-      headers,
+      headers: jsonHeaders,
       body: JSON.stringify({ fields, typecast: true }),
     });
 
@@ -264,9 +251,6 @@ export const createTransaction = async (transaction) => {
 // update an existing transaction in airtable
 // this function modifies a transaction that already exists
 export const updateTransaction = async (id, transaction) => {
-  // check if credentials are present
-  if (!API_KEY || !BASE_ID) return null;
-
   // calculate values
   // use parseFloat to preserve decimal precision, especially for crypto
   const quantity = parseFloat(transaction.quantity);
@@ -295,9 +279,9 @@ export const updateTransaction = async (id, transaction) => {
   );
 
   try {
-    const response = await fetch(`${BASE_URL}/${id}`, {
+    const response = await fetch(`${RECORDS_BASE}/${id}`, {
       method: "PATCH",
-      headers,
+      headers: jsonHeaders,
       body: JSON.stringify({ fields, typecast: true }),
     });
 
@@ -323,14 +307,11 @@ export const updateTransaction = async (id, transaction) => {
 // delete a transaction from airtable
 // this function removes a transaction from the database
 export const deleteTransaction = async (id) => {
-  // check if credentials are present
-  if (!API_KEY || !BASE_ID) return false;
-
   try {
     // make a delete request to remove the record
-    const response = await fetch(`${BASE_URL}/${id}`, {
+    const response = await fetch(`${RECORDS_BASE}/${id}`, {
       method: "DELETE",
-      headers,
+      headers: jsonHeaders,
     });
 
     // check if request was successful

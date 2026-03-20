@@ -14,21 +14,27 @@ import { normalizeAssetType } from "../services/utils";
 // use sorted joined strings for stable keys with arrays
 export const queryKeys = {
   transactions: ["transactions"],
+  appStatus: ["app-status"],
   stockPrices: (tickers) => ["stockPrices", [...tickers].sort().join(",")],
   cryptoPrices: (tickers) => ["cryptoPrices", [...tickers].sort().join(",")],
 };
 
-// hook to check if airtable is configured
+// hook to check if airtable is configured (server-side secrets via /api/app-status)
 export function useAirtableStatus() {
-  const hasAirtable = !!(
-    // double bang operator - used to convert any value to a boolean
-    // prevents API key from being revealed
-    (
-      import.meta.env.VITE_AIRTABLE_API_KEY &&
-      import.meta.env.VITE_AIRTABLE_BASE_ID
-    )
-  );
-  return { isEnabled: hasAirtable };
+  const query = useQuery({
+    queryKey: queryKeys.appStatus,
+    queryFn: async () => {
+      const r = await fetch("/api/app-status");
+      if (!r.ok) return { airtable: false };
+      return r.json();
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+  return {
+    isEnabled: !!query.data?.airtable,
+    isStatusPending: query.isPending,
+  };
 }
 
 // hook to fetch all transactions from airtable
