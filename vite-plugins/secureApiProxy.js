@@ -6,13 +6,6 @@ export function secureApiPlugin(env) {
   const twelveKey =
     env.TWELVE_DATA_API_KEY || env.VITE_TWELVE_DATA_API_KEY || "";
   const cgKey = env.COINGECKO_API_KEY || env.VITE_COINGECKO_API_KEY || "";
-  const atKey = env.AIRTABLE_API_KEY || env.VITE_AIRTABLE_API_KEY || "";
-  const atBase = env.AIRTABLE_BASE_ID || env.VITE_AIRTABLE_BASE_ID || "";
-  const atTable =
-    env.AIRTABLE_TABLE_ID ||
-    env.VITE_AIRTABLE_TABLE_ID ||
-    "tblmeRh5qtO0IXt1V";
-
   async function readRequestBody(req) {
     if (req.method === "GET" || req.method === "HEAD") return undefined;
     const chunks = [];
@@ -80,44 +73,6 @@ export function secureApiPlugin(env) {
     res.end(Buffer.from(await upstream.arrayBuffer()));
   }
 
-  async function handleAirtable(req, res) {
-    if (!atKey || !atBase) {
-      sendJson(res, 503, { code: "AIRTABLE_NOT_CONFIGURED" });
-      return;
-    }
-
-    const fullUrl = new URL(req.url, "http://localhost");
-    const path = fullUrl.pathname;
-    const match = path.match(/^\/api\/airtable\/records(?:\/(rec[a-zA-Z0-9]+))?$/);
-    if (!match) {
-      res.statusCode = 404;
-      res.end();
-      return;
-    }
-    const recordId = match[1];
-    const basePath = recordId
-      ? `https://api.airtable.com/v0/${atBase}/${atTable}/${recordId}`
-      : `https://api.airtable.com/v0/${atBase}/${atTable}/records`;
-    const target = `${basePath}${fullUrl.search}`;
-    const headers = {
-      Authorization: `Bearer ${atKey}`,
-      "Content-Type": "application/json",
-    };
-    const body = await readRequestBody(req);
-    const upstream = await fetch(target, {
-      method: req.method,
-      headers,
-      body:
-        body && (req.method === "POST" || req.method === "PATCH")
-          ? body
-          : undefined,
-    });
-    res.statusCode = upstream.status;
-    const ct = upstream.headers.get("content-type");
-    if (ct) res.setHeader("Content-Type", ct);
-    res.end(Buffer.from(await upstream.arrayBuffer()));
-  }
-
   function installMiddleware(server) {
     server.middlewares.use(async (req, res, next) => {
       if (!req.url.startsWith("/api/")) {
@@ -131,7 +86,9 @@ export function secureApiPlugin(env) {
           res.setHeader("Content-Type", "application/json");
           res.end(
             JSON.stringify({
-              airtable: !!(atKey && atBase),
+              supabase: !!(
+                env.VITE_SUPABASE_URL && env.VITE_SUPABASE_ANON_KEY
+              ),
               twelveData: !!twelveKey,
               coinGeckoKeyConfigured: !!cgKey,
             })
@@ -149,10 +106,6 @@ export function secureApiPlugin(env) {
           return;
         }
 
-        if (req.url.startsWith("/api/airtable/")) {
-          await handleAirtable(req, res);
-          return;
-        }
       } catch (e) {
         console.error("[secure-api-proxy]", e);
         sendJson(res, 502, { code: "PROXY_ERROR" });

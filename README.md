@@ -11,6 +11,7 @@ A modern investment portfolio tracker built with React. Track stocks and cryptoc
 - **Transaction Management** - Add, edit, and delete buy/sell transactions with validation
 - **Portfolio Analytics** - Performance charts and allocation pie charts with time filters
 - **Privacy Mode** - One-click toggle to hide sensitive portfolio values
+- **Auth** - Email/password via Supabase Auth (JWT). Profiles support `user` and `admin` roles; Row Level Security enforces data access on the server
 
 ## 🛠️ Tech Stack
 
@@ -21,9 +22,92 @@ A modern investment portfolio tracker built with React. Track stocks and cryptoc
 | **Styling**          | Tailwind CSS                            |
 | **Charts**           | Recharts                                |
 | **Build Tool**       | Vite                                    |
-| **Database**         | Airtable                                |
+| **Backend**          | Supabase (Postgres + Auth + RLS)        |
 | **APIs**             | TwelveData (stocks), CoinGecko (crypto) |
 | **Icons**            | Phosphor Icons                          |
+| **Hosting**          | Vercel (SPA rewrites included)          |
+
+## 📁 Project Structure
+
+```
+src/
+├── context/
+│   └── AuthContext.jsx         # Session, profile role, sign in/out
+├── lib/
+│   └── supabaseClient.js       # Singleton browser client (anon key only)
+├── components/
+│   ├── Login.jsx               # Email auth; warns if env missing
+│   ├── ProtectedRoute.jsx      # Requires Supabase config + session
+│   └── ...
+├── hooks/
+│   └── usePortfolio.js         # Queries/mutations → supabaseDb
+├── services/
+│   ├── supabaseDb.js           # Transaction CRUD
+│   └── api.js                  # Market data (optional API keys)
+supabase/migrations/
+└── 001_initial_schema.sql      # Run in Supabase SQL editor
+```
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- A [Supabase](https://supabase.com) project
+- (Optional) TwelveData / CoinGecko keys for live prices
+
+### Installation
+
+```bash
+npm install
+cp .env.example .env
+# fill VITE_SUPABASE_* and optional market keys
+
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). You will be redirected to `/login` until you sign in.
+
+### Supabase setup
+
+1. Create a project and run `supabase/migrations/001_initial_schema.sql` in the **SQL Editor** (creates `profiles`, `transactions`, RLS, and the new-user trigger).
+2. In **Authentication → Providers**, enable Email.
+3. Copy **Project URL** and **anon public** key into `.env` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+4. **Admin users**: new signups get `role = user`. Promote an account in SQL:
+
+   ```sql
+   update public.profiles set role = 'admin' where id = '<user-uuid>';
+   ```
+
+   Admins can read and manage all rows in `transactions` (per RLS). Regular users only see their own.
+
+## 🔐 Environment variables
+
+See `.env.example`. Important:
+
+| Variable | Where to use | Notes |
+| -------- | ------------ | ----- |
+| `VITE_SUPABASE_URL` | Vercel + local | Public |
+| `VITE_SUPABASE_ANON_KEY` | Vercel + local | Public; safe in browser with RLS |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Never** in this repo | Bypasses RLS; server-only secrets |
+
+**JWT and localStorage:** Supabase stores the session JWT in `localStorage` by default. That is normal for SPAs. Do not ship the **service role** key in Vite—anything prefixed with `VITE_` is embedded in the client bundle.
+
+Prefer `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` (no `VITE_` prefix) so market keys stay server-side in dev/preview via the Vite proxy. See **Market data keys** below.
+
+## ▲ Deploying to Vercel
+
+1. Connect the Git repository and set **Framework Preset** to Vite (or let Vercel auto-detect).
+2. Add environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and any optional `VITE_*` market keys.
+3. `vercel.json` includes SPA fallbacks so client-side routes (e.g. `/asset/AAPL`) resolve correctly.
+
+## 🗄️ Database schema (summary)
+
+**`profiles`** — `id` (FK `auth.users`), `email`, `role` (`user` | `admin`).
+
+**`transactions`** — `user_id`, `ticker`, `name`, `type`, `quantity`, `price`, `total_cost`, `asset_class`, `occurred_at`, timestamps.
+
+Field names in the app UI (e.g. “Order Type”, “Asset Class”) still map to these columns inside `supabaseDb.js`.
 
 ## 🎯 What I Learned
 
@@ -40,109 +124,10 @@ A modern investment portfolio tracker built with React. Track stocks and cryptoc
 - CSV import/export for bulk transactions
 - Dividend and income tracking
 - Price alerts and notifications
-- Dark/light theme toggle
 - PWA support for offline access
 
-## 📁 Project Structure
+## 📈 Market data keys (dev / preview)
 
-```
-src/
-├── components/
-│   ├── Dashboard.jsx           # Main portfolio view with charts & tables
-│   ├── AssetDetails.jsx        # Individual asset page with history
-│   ├── PortfolioTable.jsx      # Sortable assets table with actions
-│   ├── PortfolioCharts.jsx     # Performance & allocation charts
-│   ├── TransactionFormModal.jsx # Add/edit transaction form
-│   ├── Layout.jsx              # Page wrapper with footer
-│   └── ui/                     # Reusable UI components
-│       ├── FormInput.jsx       # Form input with validation
-│       ├── ButtonGroup.jsx     # Button group with variants (pills, tabs, toggle)
-│       ├── AssetDropdown.jsx   # Asset autocomplete dropdown
-│       ├── StatCard.jsx        # Metric display card
-│       ├── AssetLogo.jsx       # Logo with fallback
-│       ├── Button.jsx          # Button component with primary variant
-│       ├── IconButton.jsx      # Icon button with variants (edit, delete, add, more, close)
-│       ├── TransactionTypeBadge.jsx # Buy/Sell badge
-│       ├── LoadingState.jsx    # Loading indicator
-│       └── EmptyState.jsx      # Empty table state
-├── hooks/
-│   ├── usePortfolio.js         # TanStack Query hooks for data
-│   ├── useTransactionModal.js  # Modal state management
-│   ├── useSort.js              # Reusable table sorting
-│   └── useClickOutside.js      # Click outside detection
-├── services/
-│   ├── airtable.js             # Database CRUD operations
-│   ├── api.js                  # Price fetching with caching
-│   ├── cache.js                # Centralized cache utilities
-│   └── utils.js                # Formatting & calculations
-├── constants/
-│   └── assets.js               # Centralized asset data & crypto mappings
-└── App.jsx                     # Router setup
-```
+Stock and crypto price requests go to same-origin `/api/twelve-data/*` and `/api/coingecko/*`. In **development** and **`vite preview`**, `vite-plugins/secureApiProxy.js` forwards those routes and attaches `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` from `.env` on the server side so they are not embedded in the JS bundle.
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- Airtable account (free tier works)
-- TwelveData API key (free tier available)
-- CoinGecko API key (optional)
-
-### Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd Portfolio-Tracker-App
-
-# Install dependencies
-npm install
-
-# Set up environment variables (see below)
-
-# Start development server
-npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173) in your browser.
-
-## 🔐 Environment Variables
-
-**Do not use `VITE_` prefixes for API keys.** In Vite, any `VITE_*` variable is compiled into the browser bundle, so anyone can read it. This app keeps secrets on the server and exposes only same-origin `/api/*` routes (via the Vite dev server and `vite preview`).
-
-Create a `.env` file in the root directory (see `.env.example`):
-
-```env
-# Airtable (required for transactions)
-AIRTABLE_API_KEY=your_airtable_personal_access_token
-AIRTABLE_BASE_ID=your_airtable_base_id
-AIRTABLE_TABLE_ID=your_airtable_table_id  # Optional; default exists in code
-
-# TwelveData (stock prices)
-TWELVE_DATA_API_KEY=your_twelvedata_api_key
-
-# CoinGecko (optional; improves rate limits)
-COINGECKO_API_KEY=your_coingecko_demo_api_key
-```
-
-During migration, the dev/preview proxy also reads legacy `VITE_*` names for the same variables so old `.env` files keep working—but you should rename them to the names above so secrets are never intended for client exposure.
-
-### Production builds
-
-`npm run build` outputs static files only. They do not contain your keys, but the browser still calls `/api/...`, so you must serve the app behind a host that implements the same proxy routes (Node server, serverless functions, etc.). `npm run preview` runs Vite’s preview server with the proxy for local testing of production assets.
-
-## 🗄️ Airtable Schema
-
-Create a table in Airtable with the following columns:
-
-| Column Name | Field Type     | Description                        |
-| ----------- | -------------- | ---------------------------------- |
-| Ticker      | Single line    | Asset symbol (e.g., AAPL, BTC)     |
-| Name        | Single line    | Asset name (e.g., Apple Inc.)      |
-| Asset Class | Single select  | `Stock` or `Crypto`                |
-| Order Type  | Single select  | Transaction type: `Buy` or `Sell`  |
-| Price       | Number         | Price per unit at transaction time |
-| Quantity    | Number         | Number of shares/coins             |
-| Total Cost  | Formula/Number | Quantity × Price                   |
-| Date        | Date           | Transaction date and time          |
+For **production on Vercel**, configure [Vercel serverless functions](https://vercel.com/docs/functions) or another backend that implements the same `/api/*` paths, or accept degraded pricing when those routes are unavailable.
