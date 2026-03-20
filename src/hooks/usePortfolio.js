@@ -6,9 +6,10 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
-} from "../services/airtable";
+} from "../services/supabaseDb";
 import { fetchStockPrices, fetchCryptoPrices } from "../services/api";
 import { normalizeAssetType } from "../services/utils";
+import { useAuth } from "../context/AuthContext";
 
 // query keys - centralized for consistency
 // use sorted joined strings for stable keys with arrays
@@ -18,22 +19,14 @@ export const queryKeys = {
   cryptoPrices: (tickers) => ["cryptoPrices", [...tickers].sort().join(",")],
 };
 
-// hook to check if airtable is configured
-export function useAirtableStatus() {
-  const hasAirtable = !!(
-    // double bang operator - used to convert any value to a boolean
-    // prevents API key from being revealed
-    (
-      import.meta.env.VITE_AIRTABLE_API_KEY &&
-      import.meta.env.VITE_AIRTABLE_BASE_ID
-    )
-  );
-  return { isEnabled: hasAirtable };
+/** Supabase URL + anon key present and user signed in (JWT in localStorage). */
+export function useSupabaseReady() {
+  const { session, isConfigured } = useAuth();
+  return { isReady: Boolean(isConfigured && session) };
 }
 
-// hook to fetch all transactions from airtable
 export function useTransactions() {
-  const { isEnabled } = useAirtableStatus();
+  const { isReady } = useSupabaseReady();
 
   return useQuery({
     queryKey: queryKeys.transactions,
@@ -41,8 +34,8 @@ export function useTransactions() {
       const data = await fetchTransactions();
       return data;
     },
-    enabled: isEnabled, // only fetch if airtable is configured
-    staleTime: 5 * 60 * 1000, // 5 minutes in miliseconds
+    enabled: isReady,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

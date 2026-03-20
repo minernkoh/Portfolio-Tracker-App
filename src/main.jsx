@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast'
 import './index.css'
 import App from './App.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
+import { AuthProvider } from './context/AuthContext.jsx'
 
 // initialize theme on page load
 const initializeTheme = () => {
@@ -38,6 +39,7 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      <AuthProvider>
       <ErrorBoundary>
         <App />
         <Toaster 
@@ -67,6 +69,7 @@ createRoot(document.getElementById('root')).render(
           }}
         />
       </ErrorBoundary>
+      </AuthProvider>
     </QueryClientProvider>
   </StrictMode>,
 )

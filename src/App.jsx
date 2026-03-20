@@ -4,15 +4,30 @@ import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Dashboard from "./components/Dashboard";
 import AssetDetails from "./components/AssetDetails";
+import Login from "./components/Login";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* main dashboard route - shows portfolio overview */}
-        <Route path="/" element={<Dashboard />} />
-        {/* separate route for viewing individual asset details */}
-        <Route path="/asset/:ticker" element={<AssetDetails />} />
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/asset/:ticker"
+          element={
+            <ProtectedRoute>
+              <AssetDetails />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );

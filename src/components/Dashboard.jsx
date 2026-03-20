@@ -1,6 +1,7 @@
 // main dashboard component - displays portfolio, charts, and transaction management
 
 import React, { useState, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import Layout from "./Layout";
 import PortfolioCharts from "./PortfolioCharts";
 import PortfolioTable from "./PortfolioTable";
@@ -25,10 +26,10 @@ import {
   usePrices,
   useDeleteAsset,
   useDeleteTransaction,
-  useAirtableStatus,
 } from "../hooks/usePortfolio";
+import { useAuth } from "../context/AuthContext";
 import { useTransactionModal } from "../hooks/useTransactionModal";
-import { EyeIcon, EyeSlashIcon, ArrowClockwiseIcon, CaretUp, CaretDown, Sun, Moon } from "@phosphor-icons/react";
+import { EyeIcon, EyeSlashIcon, ArrowClockwiseIcon, CaretUp, CaretDown, Sun, Moon, SignOut } from "@phosphor-icons/react";
 import { useSort } from "../hooks/useSort";
 import { useTheme } from "../hooks/useTheme";
 
@@ -36,8 +37,13 @@ export default function Dashboard() {
   // theme hook
   const { theme, toggleTheme } = useTheme();
   
-  // data fetching hooks
-  const { isEnabled: isAirtableEnabled } = useAirtableStatus();
+  const navigate = useNavigate();
+  const { signOut, isAdmin, user } = useAuth();
+
+  const handleSignOut = useCallback(async () => {
+    await signOut();
+    navigate("/login", { replace: true });
+  }, [signOut, navigate]);
   const { data: transactions = [], isLoading, error: loadError, refetch } = useTransactions();
   const { prices, isFetching: pricesFetching } = usePrices(transactions);
   const deleteAsset = useDeleteAsset();
@@ -162,10 +168,10 @@ export default function Dashboard() {
   if (isLoading) return <LoadingState fullScreen={false} />;
 
   // error state
-  if (loadError || (!isAirtableEnabled && transactions.length === 0)) {
-    const errorMessage = !isAirtableEnabled
-      ? "Airtable configuration missing. Please add your API keys to .env file."
-      : loadError?.message || "Failed to load portfolio data. Please try again.";
+  if (loadError) {
+    const errorMessage =
+      loadError?.message ||
+      "Failed to load portfolio data. Check Supabase URL, anon key, and database policies.";
 
     return (
       <Layout>
@@ -194,8 +200,13 @@ export default function Dashboard() {
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
           <div className="flex flex-col gap-4">
             <div>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <h1 className="text-xl font-bold text-[var(--text-primary)]">My Portfolio</h1>
+                {isAdmin && (
+                  <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40">
+                    Admin
+                  </span>
+                )}
                 <button
                   onClick={() => setHideValues((prev) => !prev)}
                   className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
@@ -237,7 +248,20 @@ export default function Dashboard() {
               onChange={setActiveTab}
             />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {user?.email && (
+              <span className="text-xs text-[var(--text-secondary)] max-w-[140px] truncate hidden sm:inline" title={user.email}>
+                {user.email}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => handleSignOut()}
+              className="p-2 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors"
+              title="Sign out"
+            >
+              <SignOut size={18} weight="bold" />
+            </button>
             <ButtonGroup
               variant="themeToggle"
               options={[
