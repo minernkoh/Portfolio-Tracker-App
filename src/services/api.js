@@ -1,7 +1,7 @@
 // api services for fetching stock and crypto prices
 // uses centralized caching utilities for localStorage
 
-import { getFromCache, setToCache, getAnyCached, getCachedBatch, getSimpleCache, setSimpleCache } from './cache';
+import { setToCache, getAnyCached, getCachedBatch, getSimpleCache, setSimpleCache } from './cache';
 import { CRYPTO_MAP } from '../constants/assets';
 
 // Same-origin proxy adds keys server-side (dev/preview); never embed secrets in the client bundle.
@@ -254,7 +254,7 @@ const searchCryptoByTicker = async (ticker) => {
 // get crypto info (id, name, logo)
 export const getCryptoInfo = async (ticker) => {
   if (CRYPTO_MAP[ticker]) {
-    return { id: CRYPTO_MAP[ticker].id, name: ticker, logo: CRYPTO_MAP[ticker].logo };
+    return { id: CRYPTO_MAP[ticker].id, name: CRYPTO_MAP[ticker].name || ticker, logo: CRYPTO_MAP[ticker].logo };
   }
 
   const cache = getSimpleCache(CRYPTO_INFO_CACHE_KEY);

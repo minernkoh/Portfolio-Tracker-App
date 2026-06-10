@@ -9,7 +9,11 @@ import FormInput from "./ui/FormInput";
 export default function Login() {
   const { session, loading, signIn, signUp, isConfigured } = useAuth();
   const location = useLocation();
-  const from = location.state?.from?.pathname || "/";
+  // restore the full location (path + query + hash) the user was redirected from
+  const fromLocation = location.state?.from;
+  const from = fromLocation
+    ? `${fromLocation.pathname || "/"}${fromLocation.search || ""}${fromLocation.hash || ""}`
+    : "/";
 
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
