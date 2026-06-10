@@ -2,8 +2,9 @@
 
 import React, { useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { ArrowLeftIcon, CaretUp, CaretDown } from '@phosphor-icons/react';
-import { formatCurrency, formatQuantity, formatQuantity4SF, calculatePortfolioData, formatDateTime, truncateName, calculatePnLPercentage, format24hChange, formatPrice } from '../services/utils';
+import { formatCurrency, formatQuantity, formatQuantity4SF, calculatePortfolioData, formatDateTime, truncateName, calculatePnLPercentage, format24hChange, formatPrice, validateSellQuantities } from '../services/utils';
 import AssetLogo from './ui/AssetLogo';
 import Layout from './Layout';
 import TransactionFormModal from './TransactionFormModal';
@@ -17,7 +18,9 @@ import { useTransactionModal } from '../hooks/useTransactionModal';
 import { useSort } from '../hooks/useSort';
 
 export default function AssetDetails() {
-  const { ticker } = useParams();
+  // tickers are stored uppercase; normalize so /asset/aapl matches AAPL
+  const { ticker: tickerParam } = useParams();
+  const ticker = tickerParam?.toUpperCase();
   
   // data fetching
   const { data: transactions = [], isLoading } = useTransactions();
@@ -82,6 +85,14 @@ export default function AssetDetails() {
   
   // handle delete with confirmation
   const handleDeleteTransaction = (tx) => {
+    // deleting a buy must not leave later sells uncovered (would corrupt FIFO)
+    const remaining = transactions.filter((t) => t.id !== tx.id);
+    if (!validateSellQuantities(remaining, tx.ticker).valid) {
+      toast.error(
+        `Cannot delete this buy: your remaining ${tx.ticker} purchases would not cover its sell transactions. Delete or edit those sells first.`
+      );
+      return;
+    }
     if (window.confirm(`Delete this ${tx.type.toLowerCase()} transaction for ${tx.quantity} ${asset.ticker}?`)) {
       deleteTransactionMutation.mutate(tx.id);
     }
@@ -258,6 +269,7 @@ export default function AssetDetails() {
             initialData={editingTransaction}
             isEditMode={isEditMode}
             portfolioData={portfolioData}
+            transactions={transactions}
           />
         )}
       </div>

@@ -41,8 +41,9 @@ export function useTransactionModal() {
   }, []);
 
   // handle adding a new transaction
-  const handleAddTransaction = useCallback((newTx) => {
-    addTransaction.mutate(newTx);
+  // mutateAsync so the modal awaits the server result and stays open on failure
+  const handleAddTransaction = useCallback(async (newTx) => {
+    await addTransaction.mutateAsync(newTx);
   }, [addTransaction]);
 
   // handle updating an existing transaction

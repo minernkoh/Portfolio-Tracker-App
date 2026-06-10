@@ -116,8 +116,7 @@ export const formatQuantity4SF = (value) => {
   
   // convert to 4 significant figures using toPrecision
   const precisionStr = num.toPrecision(4);
-  const precisionNum = parseFloat(precisionStr);
-  
+
   // split into integer and decimal parts
   const parts = precisionStr.split(".");
   const integerPart = parts[0];
@@ -208,7 +207,7 @@ export const formatDateTime = (dateString, timeString) => {
       const minutes = String(date.getMinutes()).padStart(2, "0");
       
       return `${year}-${month}-${day} ${hours}:${minutes}`;
-    } catch (error) {
+    } catch {
       // if parsing fails, try to clean up the string by removing T and Z
       return dateString.replace("T", " ").replace(/Z$/, "").substring(0, 16);
     }
@@ -275,42 +274,60 @@ export const format24hChange = (changePercent) => {
   };
 };
 
+// chronological comparator used for all FIFO processing:
+// primary sort by date+time (oldest first), buys before sells on equal timestamps
+// (cannot sell what is not owned yet)
+export const compareTransactionsChronologically = (a, b) => {
+  // combine date and time for comparison (e.g., "2024-01-15T14:30")
+  const dateTimeA = a.time ? `${a.date}T${a.time}` : a.date;
+  const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
+  const dateA = new Date(dateTimeA);
+  const dateB = new Date(dateTimeB);
+
+  if (dateA.getTime() !== dateB.getTime()) {
+    return dateA - dateB;
+  }
+
+  const typeA = a.type?.toLowerCase() === "buy" ? 0 : 1;
+  const typeB = b.type?.toLowerCase() === "buy" ? 0 : 1;
+  return typeA - typeB;
+};
+
+export const sortTransactionsChronologically = (transactions) =>
+  [...transactions].sort(compareTransactionsChronologically);
+
+/**
+ * verify that no sell ever exceeds the shares held at that point in time.
+ * used to guard deletes/edits of buy transactions that would leave
+ * later sells uncovered and corrupt FIFO cost basis.
+ * returns { valid: true } or { valid: false, ticker }
+ */
+export const validateSellQuantities = (transactions, ticker = null) => {
+  const relevant = ticker
+    ? transactions.filter((tx) => tx.ticker === ticker)
+    : transactions;
+  const sorted = sortTransactionsChronologically(relevant);
+
+  const balances = {};
+  for (const tx of sorted) {
+    const qty = Number(tx.quantity) || 0;
+    const delta = tx.type?.toLowerCase() === "buy" ? qty : -qty;
+    balances[tx.ticker] = (balances[tx.ticker] || 0) + delta;
+    // small epsilon for floating point accumulation
+    if (balances[tx.ticker] < -1e-9) {
+      return { valid: false, ticker: tx.ticker };
+    }
+  }
+  return { valid: true };
+};
+
 /**
  * calculate portfolio data from transactions and current prices
  * uses FIFO (First In, First Out) accounting: oldest shares sold first
  */
 export const calculatePortfolioData = (transactions, prices) => {
   // phase 1: sort transactions chronologically (oldest first) - required for FIFO
-  // secondary sort: buys before sells when timestamps are equal
-  const sortedTransactions = [...transactions].sort((a, b) => {
-    // combine date and time for comparison (e.g., "2024-01-15T14:30")
-    const dateTimeA = a.time ? `${a.date}T${a.time}` : a.date;
-    const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
-    const dateA = new Date(dateTimeA);
-    const dateB = new Date(dateTimeB);
-    
-    // primary sort: by date/time (ascending = oldest first)
-    if (dateA.getTime() !== dateB.getTime()) {
-      return dateA - dateB;
-    }
-    
-    // secondary sort: buys before sells (cannot sell what is not owned)
-    // convert transaction type to number for sorting:
-    //   - "Buy" → 0 (comes first)
-    //   - "Sell" → 1 (comes after)
-
-    // example: a.type = "Buy"
-    //   step 1: "Buy".toLowerCase() = "buy"
-    //   step 2: "buy" === "buy" = true
-    //   step 3: true ? 0 : 1 = 0
-    //   result: typeA = 0 ✅
-    const typeA = a.type?.toLowerCase() === "buy" ? 0 : 1;
-    const typeB = b.type?.toLowerCase() === "buy" ? 0 : 1;
-
-    // sort by numeric value: negative = A comes first, positive = B comes first, 0 = same order
-    // example: typeA = 0 (Buy), typeB = 1 (Sell) → 0 - 1 = -1 → A comes before B ✅
-    return typeA - typeB;
-  });
+  const sortedTransactions = sortTransactionsChronologically(transactions);
 
   // phase 2: process transactions - group by ticker and track holdings
   const assetMap = {};
