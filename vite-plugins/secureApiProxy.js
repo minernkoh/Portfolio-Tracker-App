@@ -53,7 +53,16 @@ export function secureApiPlugin(env) {
     const pathPart = q === -1 ? req.url : req.url.slice(0, q);
     const search = q === -1 ? "" : req.url.slice(q);
     const subPath = pathPart.replace(/^\/api\/coingecko\//, "");
-    if (!subPath || subPath.includes("..")) {
+    // check the decoded path too so %2e%2e cannot smuggle a traversal
+    let decodedSubPath;
+    try {
+      decodedSubPath = decodeURIComponent(subPath);
+    } catch {
+      res.statusCode = 400;
+      res.end();
+      return;
+    }
+    if (!subPath || subPath.includes("..") || decodedSubPath.includes("..")) {
       res.statusCode = 400;
       res.end();
       return;
