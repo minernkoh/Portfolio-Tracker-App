@@ -6,6 +6,7 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
+  deleteTransactions,
 } from "../services/supabaseDb";
 import { fetchStockPrices, fetchCryptoPrices } from "../services/api";
 import { normalizeAssetType } from "../services/utils";
@@ -244,15 +245,10 @@ export function useDeleteAsset() {
 
   return useMutation({
     mutationFn: async ({ ticker, transactionIds }) => {
-      // delete each transaction one by one to avoid rate limits
-      // deleteTransaction throws on failure, so a partial failure aborts
-      // here and surfaces in onError (refetch in onSettled restores truth)
-      let deleted = 0;
-      for (const id of transactionIds) {
-        await deleteTransaction(id);
-        deleted++;
-      }
-      return { ticker, count: deleted };
+      // single batched delete; throws on failure so it surfaces in onError
+      // (refetch in onSettled restores truth)
+      const count = await deleteTransactions(transactionIds);
+      return { ticker, count };
     },
     onMutate: async ({ ticker }) => {
       await queryClient.cancelQueries({ queryKey: transactionsKey });
