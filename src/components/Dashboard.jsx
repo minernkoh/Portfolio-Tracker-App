@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 import Layout from "./Layout";
 import PortfolioCharts from "./PortfolioCharts";
 import PortfolioTable from "./PortfolioTable";
@@ -20,6 +21,7 @@ import {
   formatDateTime,
   calculatePnLPercentage,
   format24hChange,
+  validateSellQuantities,
 } from "../services/utils";
 import {
   useTransactions,
@@ -78,8 +80,14 @@ export default function Dashboard() {
   // total profit/loss (unrealized gains/losses)
   const totalPnL = useMemo(() => portfolioData.reduce((sum, a) => sum + a.pnl, 0), [portfolioData]);
   // total 24h change in portfolio value (priceChange24h is a percentage)
+  // a +p% move means the dollar change is currentValue × p / (100 + p),
+  // since the percentage is relative to the price 24h ago
   const total24hChange = useMemo(() => {
-    return portfolioData.reduce((sum, a) => sum + (a.priceChange24h / 100) * a.currentPrice * a.quantity, 0);
+    return portfolioData.reduce((sum, a) => {
+      const denominator = 100 + a.priceChange24h;
+      if (denominator === 0) return sum;
+      return sum + (a.currentPrice * a.quantity * a.priceChange24h) / denominator;
+    }, 0);
   }, [portfolioData]);
 
   const is24hPositive = total24hChange >= 0;
@@ -113,10 +121,18 @@ export default function Dashboard() {
 
   // delete transaction handler
   const handleDeleteTransaction = useCallback((tx) => {
+    // deleting a buy must not leave later sells uncovered (would corrupt FIFO)
+    const remaining = transactions.filter((t) => t.id !== tx.id);
+    if (!validateSellQuantities(remaining, tx.ticker).valid) {
+      toast.error(
+        `Cannot delete this buy: your remaining ${tx.ticker} purchases would not cover its sell transactions. Delete or edit those sells first.`
+      );
+      return;
+    }
     if (window.confirm(`Delete this ${tx.type.toLowerCase()} transaction for ${tx.quantity} ${tx.ticker}?`)) {
       deleteTransactionMutation.mutate(tx.id);
     }
-  }, [deleteTransactionMutation]);
+  }, [transactions, deleteTransactionMutation]);
 
   // filter and sort transactions based on current filter and sort settings
   const allTransactionsSorted = useMemo(() => {
@@ -442,6 +458,7 @@ export default function Dashboard() {
             initialData={editingTransaction}
             isEditMode={isEditMode}
             portfolioData={portfolioData}
+            transactions={transactions}
           />
         )}
       </div>

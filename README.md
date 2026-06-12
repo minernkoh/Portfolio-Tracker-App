@@ -70,7 +70,7 @@ Open [http://localhost:5173](http://localhost:5173). You will be redirected to `
 
 ### Supabase setup
 
-1. Create a project and run `supabase/migrations/001_initial_schema.sql` in the **SQL Editor** (creates `profiles`, `transactions`, RLS, and the new-user trigger).
+1. Create a project and run the files in `supabase/migrations/` (in order) in the **SQL Editor** — `001` creates `profiles`, `transactions`, RLS, and the new-user trigger; `002` adds data-integrity constraints.
 2. In **Authentication → Providers**, enable Email.
 3. Copy **Project URL** and **anon public** key into `.env` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 4. **Admin users**: new signups get `role = user`. Promote an account in SQL:
@@ -98,8 +98,8 @@ Prefer `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` (no `VITE_` prefix) so mark
 ## ▲ Deploying to Vercel
 
 1. Connect the Git repository and set **Framework Preset** to Vite (or let Vercel auto-detect).
-2. Add environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and any optional `VITE_*` market keys.
-3. `vercel.json` includes SPA fallbacks so client-side routes (e.g. `/asset/AAPL`) resolve correctly.
+2. Add environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and optionally `TWELVE_DATA_API_KEY` / `COINGECKO_API_KEY` for live prices.
+3. `vercel.json` includes SPA fallbacks so client-side routes (e.g. `/asset/AAPL`) resolve correctly. The `/api/*` routes are excluded from the SPA rewrite and served by the serverless functions in `api/`.
 
 ## 🗄️ Database schema (summary)
 
@@ -126,8 +126,11 @@ Field names in the app UI (e.g. “Order Type”, “Asset Class”) still map t
 - Price alerts and notifications
 - PWA support for offline access
 
-## 📈 Market data keys (dev / preview)
+## 📈 Market data keys
 
-Stock and crypto price requests go to same-origin `/api/twelve-data/*` and `/api/coingecko/*`. In **development** and **`vite preview`**, `vite-plugins/secureApiProxy.js` forwards those routes and attaches `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` from `.env` on the server side so they are not embedded in the JS bundle.
+Stock and crypto price requests go to same-origin `/api/twelve-data/*` and `/api/coingecko/*` so API keys are never embedded in the JS bundle:
 
-For **production on Vercel**, configure [Vercel serverless functions](https://vercel.com/docs/functions) or another backend that implements the same `/api/*` paths, or accept degraded pricing when those routes are unavailable.
+- **Development / `vite preview`**: `vite-plugins/secureApiProxy.js` forwards those routes and attaches `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` from `.env` on the server side.
+- **Production (Vercel)**: the serverless functions in `api/` implement the same routes. Set `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` in the Vercel project environment variables.
+
+If no keys are configured, pricing degrades gracefully (cached/zero prices) instead of breaking the app.

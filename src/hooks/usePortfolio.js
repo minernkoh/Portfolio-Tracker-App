@@ -13,11 +13,19 @@ import { useAuth } from "../context/AuthContext";
 
 // query keys - centralized for consistency
 // use sorted joined strings for stable keys with arrays
+// transactions are scoped per user so one user's cached data can never be
+// served to another account signing in within the same browser session
 export const queryKeys = {
-  transactions: ["transactions"],
+  transactions: (userId) => ["transactions", userId ?? "anonymous"],
   stockPrices: (tickers) => ["stockPrices", [...tickers].sort().join(",")],
   cryptoPrices: (tickers) => ["cryptoPrices", [...tickers].sort().join(",")],
 };
+
+/** Query key for the signed-in user's transactions. */
+export function useTransactionsKey() {
+  const { user } = useAuth();
+  return useMemo(() => queryKeys.transactions(user?.id), [user?.id]);
+}
 
 /** Supabase URL + anon key present and user signed in (JWT in localStorage). */
 export function useSupabaseReady() {
@@ -27,9 +35,10 @@ export function useSupabaseReady() {
 
 export function useTransactions() {
   const { isReady } = useSupabaseReady();
+  const transactionsKey = useTransactionsKey();
 
   return useQuery({
-    queryKey: queryKeys.transactions,
+    queryKey: transactionsKey,
     queryFn: async () => {
       const data = await fetchTransactions();
       return data;
@@ -123,21 +132,20 @@ export function usePrices(transactions = []) {
 // hook to add a new transaction
 export function useAddTransaction() {
   const queryClient = useQueryClient();
+  const transactionsKey = useTransactionsKey();
 
   return useMutation({
     mutationFn: createTransaction,
     onMutate: async (newTx) => {
       // cancel any outgoing refetches to prevent race conditions
       // race conditions = when multiple operations compete and interfere with each other
-      await queryClient.cancelQueries({ queryKey: queryKeys.transactions });
+      await queryClient.cancelQueries({ queryKey: transactionsKey });
 
       // snapshot the previous value in case of rollback
-      const previousTransactions = queryClient.getQueryData(
-        queryKeys.transactions
-      );
+      const previousTransactions = queryClient.getQueryData(transactionsKey);
 
       // optimistically update UI with temporary id
-      queryClient.setQueryData(queryKeys.transactions, (old = []) => [
+      queryClient.setQueryData(transactionsKey, (old = []) => [
         ...old,
         { ...newTx, id: "temp-" + Date.now() },
       ]);
@@ -146,10 +154,7 @@ export function useAddTransaction() {
     },
     onError: (err, newTx, context) => {
       // rollback on error
-      queryClient.setQueryData(
-        queryKeys.transactions,
-        context.previousTransactions
-      );
+      queryClient.setQueryData(transactionsKey, context.previousTransactions);
       toast.error(
         `Failed to add transaction: ${err.message || "Unknown error"}`
       );
@@ -159,7 +164,7 @@ export function useAddTransaction() {
     },
     onSettled: () => {
       // refetch to get the real data
-      queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+      queryClient.invalidateQueries({ queryKey: transactionsKey });
     },
   });
 }
@@ -167,28 +172,24 @@ export function useAddTransaction() {
 // hook to update an existing transaction
 export function useUpdateTransaction() {
   const queryClient = useQueryClient();
+  const transactionsKey = useTransactionsKey();
 
   return useMutation({
     mutationFn: ({ id, data }) => updateTransaction(id, data),
     onMutate: async ({ id, data }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.transactions });
+      await queryClient.cancelQueries({ queryKey: transactionsKey });
 
-      const previousTransactions = queryClient.getQueryData(
-        queryKeys.transactions
-      );
+      const previousTransactions = queryClient.getQueryData(transactionsKey);
 
       // optimistically update the transaction
-      queryClient.setQueryData(queryKeys.transactions, (old = []) =>
+      queryClient.setQueryData(transactionsKey, (old = []) =>
         old.map((tx) => (tx.id === id ? { ...tx, ...data } : tx))
       );
 
       return { previousTransactions };
     },
     onError: (err, variables, context) => {
-      queryClient.setQueryData(
-        queryKeys.transactions,
-        context.previousTransactions
-      );
+      queryClient.setQueryData(transactionsKey, context.previousTransactions);
       toast.error(
         `Failed to update transaction: ${err.message || "Unknown error"}`
       );
@@ -197,7 +198,7 @@ export function useUpdateTransaction() {
       toast.success("Transaction updated successfully");
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+      queryClient.invalidateQueries({ queryKey: transactionsKey });
     },
   });
 }
@@ -205,34 +206,33 @@ export function useUpdateTransaction() {
 // hook to delete a transaction
 export function useDeleteTransaction() {
   const queryClient = useQueryClient();
+  const transactionsKey = useTransactionsKey();
 
   return useMutation({
     mutationFn: deleteTransaction,
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.transactions });
+      await queryClient.cancelQueries({ queryKey: transactionsKey });
 
-      const previousTransactions = queryClient.getQueryData(
-        queryKeys.transactions
-      );
+      const previousTransactions = queryClient.getQueryData(transactionsKey);
 
       // optimistically remove the transaction
-      queryClient.setQueryData(queryKeys.transactions, (old = []) =>
+      queryClient.setQueryData(transactionsKey, (old = []) =>
         old.filter((tx) => tx.id !== id)
       );
 
       return { previousTransactions };
     },
     onError: (err, id, context) => {
-      queryClient.setQueryData(
-        queryKeys.transactions,
-        context.previousTransactions
-      );
+      queryClient.setQueryData(transactionsKey, context.previousTransactions);
       toast.error(
         `Failed to delete transaction: ${err.message || "Unknown error"}`
       );
     },
+    onSuccess: () => {
+      toast.success("Transaction deleted");
+    },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+      queryClient.invalidateQueries({ queryKey: transactionsKey });
     },
   });
 }
@@ -240,41 +240,41 @@ export function useDeleteTransaction() {
 // hook to delete all transactions for an asset
 export function useDeleteAsset() {
   const queryClient = useQueryClient();
+  const transactionsKey = useTransactionsKey();
 
   return useMutation({
     mutationFn: async ({ ticker, transactionIds }) => {
       // delete each transaction one by one to avoid rate limits
+      // deleteTransaction throws on failure, so a partial failure aborts
+      // here and surfaces in onError (refetch in onSettled restores truth)
+      let deleted = 0;
       for (const id of transactionIds) {
         await deleteTransaction(id);
+        deleted++;
       }
-      return { ticker, count: transactionIds.length };
+      return { ticker, count: deleted };
     },
     onMutate: async ({ ticker }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.transactions });
+      await queryClient.cancelQueries({ queryKey: transactionsKey });
 
-      const previousTransactions = queryClient.getQueryData(
-        queryKeys.transactions
-      );
+      const previousTransactions = queryClient.getQueryData(transactionsKey);
 
       // optimistically remove all transactions for this ticker
-      queryClient.setQueryData(queryKeys.transactions, (old = []) =>
+      queryClient.setQueryData(transactionsKey, (old = []) =>
         old.filter((tx) => tx.ticker !== ticker)
       );
 
       return { previousTransactions };
     },
     onError: (err, variables, context) => {
-      queryClient.setQueryData(
-        queryKeys.transactions,
-        context.previousTransactions
-      );
+      queryClient.setQueryData(transactionsKey, context.previousTransactions);
       toast.error(`Failed to delete asset: ${err.message || "Unknown error"}`);
     },
     onSuccess: ({ ticker, count }) => {
       toast.success(`Removed ${ticker} and ${count} transaction(s)`);
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+      queryClient.invalidateQueries({ queryKey: transactionsKey });
     },
   });
 }

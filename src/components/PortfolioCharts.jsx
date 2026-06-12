@@ -1,11 +1,11 @@
 // portfolio performance and allocation charts using Recharts
 
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
 } from "recharts";
-import { formatCurrency, calculateValue } from "../services/utils";
+import { formatCurrency, calculateValue, sortTransactionsChronologically } from "../services/utils";
 import ButtonGroup from "./ui/ButtonGroup";
 import { useTheme } from "../hooks/useTheme";
 
@@ -48,14 +48,16 @@ const PerformanceTooltip = ({ active, payload, hideValues }) => {
 const calculateHistoryData = (transactions, prices, portfolioData, totalValue, timePeriod) => {
   if (!transactions?.length) return [];
 
-  // sort transactions chronologically and group by date
-  // grouping by date enables processing all transactions on the same day together
-  const sortedTxs = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+  // sort transactions chronologically (same ordering as calculatePortfolioData:
+  // date + time, buys before sells on ties) and group by calendar day
+  const sortedTxs = sortTransactionsChronologically(transactions);
   const txsByDate = new Map();
-  
+
   sortedTxs.forEach((tx) => {
-    // normalize date to midnight (remove time component) for grouping
-    const dateKey = new Date(new Date(tx.date).toDateString()).getTime();
+    // local midnight of the transaction's calendar date
+    // (parsing parts avoids the UTC shift of new Date("YYYY-MM-DD"))
+    const [year, month, day] = tx.date.split("-").map(Number);
+    const dateKey = new Date(year, month - 1, day).getTime();
     if (!txsByDate.has(dateKey)) txsByDate.set(dateKey, []);
     txsByDate.get(dateKey).push(tx);
   });

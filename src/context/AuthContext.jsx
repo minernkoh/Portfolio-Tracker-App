@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { getSupabase, isSupabaseConfigured } from "../lib/supabaseClient";
 
 const AuthContext = createContext(null);
@@ -31,6 +32,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const supabase = useMemo(() => getSupabase(), []);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!supabase) {
@@ -58,9 +60,12 @@ export function AuthProvider({ children }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, s) => {
+      if (cancelled) return;
       setSession(s);
       if (s?.user) {
-        fetchProfile(supabase, s.user.id).then((p) => setProfile(p));
+        fetchProfile(supabase, s.user.id).then((p) => {
+          if (!cancelled) setProfile(p);
+        });
       } else {
         setProfile(null);
       }
@@ -97,7 +102,9 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
-  }, [supabase]);
+    // drop all cached data so the next account never sees this user's data
+    queryClient.clear();
+  }, [supabase, queryClient]);
 
   const value = useMemo(
     () => ({
@@ -120,6 +127,8 @@ export function AuthProvider({ children }) {
   );
 }
 
+// context modules conventionally export the provider and its hook together
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");

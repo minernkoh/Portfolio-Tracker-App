@@ -7,7 +7,7 @@ import { SpinnerGap } from "@phosphor-icons/react";
 import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
 import { getStockLogo, fetchStockPrices, fetchCryptoPrices, getCryptoInfo } from "../services/api";
-import { formatPriceInput } from "../services/utils";
+import { formatPriceInput, validateSellQuantities } from "../services/utils";
 import { findAssetByTicker, searchAssets, getAssetsByType } from "../constants/assets";
 import FormInput from "./ui/FormInput";
 import AssetDropdown from "./ui/AssetDropdown";
@@ -33,13 +33,13 @@ export default function TransactionFormModal({
   initialData = null,
   isEditMode = false,
   portfolioData = [],
+  transactions = [],
 }) {
   const [formData, setFormData] = useState(getDefaultFormData());
   const [searchResults, setSearchResults] = useState([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showPopularDropdown, setShowPopularDropdown] = useState(false);
   const [isFetchingPrice, setIsFetchingPrice] = useState(false);
-  const [isFetchingCryptoInfo, setIsFetchingCryptoInfo] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
 
@@ -89,6 +89,9 @@ export default function TransactionFormModal({
     setShowDropdown(false);
     setShowPopularDropdown(false);
     setErrors({});
+    // fetchCurrentPrice is intentionally omitted: this effect must only run
+    // when the modal (re)opens, not when the price field changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialData, isEditMode]);
 
   // format price for display - use formatPriceInput to preserve precision for small numbers
@@ -132,7 +135,7 @@ export default function TransactionFormModal({
     } finally {
       setIsFetchingPrice(false);
     }
-  }, [formData.price, formData.name, formData.ticker]);
+  }, [formData.price]);
 
   // handle asset selection from dropdown
   const selectAsset = useCallback((asset) => {
@@ -195,7 +198,6 @@ export default function TransactionFormModal({
       const currentType = formData.assetType || "stock";
       
       if (currentType === "crypto") {
-        setIsFetchingCryptoInfo(true);
         try {
           const cryptoInfo = await getCryptoInfo(upperValue);
           setFormData(prev => ({
@@ -208,8 +210,6 @@ export default function TransactionFormModal({
           }));
         } catch {
           setFormData(prev => ({ ...prev, ticker: upperValue, assetType: "crypto", price: tickerChanged ? "" : existingPrice }));
-        } finally {
-          setIsFetchingCryptoInfo(false);
         }
         if (tickerChanged) {
           fetchCurrentPrice(upperValue, "Crypto", true);
@@ -312,28 +312,35 @@ export default function TransactionFormModal({
     if (!formData.quantity?.toString().trim()) newErrors.quantity = "Quantity is required";
     else if (isNaN(quantity) || quantity <= 0) newErrors.quantity = "Quantity must be a positive number";
 
-    // check if selling more than owned
-    if (formData.type === "Sell") {
-      const asset = portfolioData.find(a => a.ticker === formData.ticker);
-      let availableQuantity = asset?.quantity || 0;
-      
-      // if editing a sell transaction, add back the original quantity being sold
-      if (isEditMode && initialData?.type === "Sell" && initialData?.ticker === formData.ticker) {
-        availableQuantity += initialData.quantity;
+    // FIFO integrity: simulate the full transaction history with this change
+    // applied and reject it if any sell would exceed the shares held at that
+    // point in time (covers new sells, sell edits, and buy quantity reductions)
+    if (!newErrors.quantity && formData.ticker) {
+      let proposed = null;
+      if (isEditMode && initialData?.id) {
+        proposed = transactions.map((tx) =>
+          tx.id === initialData.id
+            ? { ...tx, quantity, date: formData.date, time: formData.time, type: formData.type || tx.type }
+            : tx
+        );
+      } else if (formData.type === "Sell") {
+        proposed = [
+          ...transactions,
+          { id: "__candidate__", ticker: formData.ticker, type: "Sell", quantity, date: formData.date, time: formData.time },
+        ];
       }
-      
-      // if editing a buy transaction to sell, subtract the original buy quantity
-      if (isEditMode && initialData?.type === "Buy" && initialData?.ticker === formData.ticker) {
-        availableQuantity -= initialData.quantity;
-      }
-      
-      // format availableQuantity with commas for display
-      const formattedAvailable = availableQuantity.toLocaleString('en-US', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 10,
-      });
-      if (quantity > availableQuantity) {
-        newErrors.quantity = `You only own ${formattedAvailable} ${formData.ticker}. Cannot sell more than you own.`;
+
+      if (proposed && !validateSellQuantities(proposed, formData.ticker).valid) {
+        if (formData.type === "Sell") {
+          const asset = portfolioData.find(a => a.ticker === formData.ticker);
+          const owned = (asset?.quantity || 0).toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 10,
+          });
+          newErrors.quantity = `You only own ${owned} ${formData.ticker} at that date. Cannot sell more than you own.`;
+        } else {
+          newErrors.quantity = `Reducing this buy would leave later ${formData.ticker} sells uncovered. Adjust those sells first.`;
+        }
       }
     }
 
@@ -347,7 +354,7 @@ export default function TransactionFormModal({
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [formData, isEditMode, portfolioData]);
+  }, [formData, isEditMode, initialData, portfolioData, transactions]);
 
   // handle form submission
   const handleSubmit = async (e) => {
@@ -583,7 +590,8 @@ export default function TransactionFormModal({
                     setFormData(prev => {
                       const newData = { ...prev, price: formatted };
                       // recalculate total after price is formatted
-                      const quantity = parseFloat(prev.quantity);
+                      // strip commas: quantity may be formatted like "1,000"
+                      const quantity = parseFloat(prev.quantity.replace(/,/g, ''));
                       const priceNum = parseFloat(formatted);
                       if (!isNaN(quantity) && !isNaN(priceNum) && quantity > 0 && priceNum >= 0) {
                         const total = quantity * priceNum;
