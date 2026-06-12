@@ -186,3 +186,17 @@ export const deleteTransaction = async (id) => {
   }
   return true;
 };
+
+export const deleteTransactions = async (ids) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase is not configured");
+  if (!ids?.length) return 0;
+
+  const { error } = await supabase.from("transactions").delete().in("id", ids);
+
+  if (error) {
+    console.error("supabase batch delete error:", error);
+    throw new Error(error.message || "failed to delete records");
+  }
+  return ids.length;
+};

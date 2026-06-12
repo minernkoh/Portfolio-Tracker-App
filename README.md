@@ -70,7 +70,7 @@ Open [http://localhost:5173](http://localhost:5173). You will be redirected to `
 
 ### Supabase setup
 
-1. Create a project and run the files in `supabase/migrations/` (in order) in the **SQL Editor** — `001` creates `profiles`, `transactions`, RLS, and the new-user trigger; `002` adds data-integrity constraints.
+1. Create a project and run the files in `supabase/migrations/` (in order) in the **SQL Editor** — `001` creates `profiles`, `transactions`, RLS, and the new-user trigger; `002` adds data-integrity constraints; `003` replaces the admin-check subqueries in the RLS policies with a `security definer` `is_admin()` function (the inline subqueries trigger Postgres's "infinite recursion detected in policy" error).
 2. In **Authentication → Providers**, enable Email.
 3. Copy **Project URL** and **anon public** key into `.env` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 4. **Admin users**: new signups get `role = user`. Promote an account in SQL:
