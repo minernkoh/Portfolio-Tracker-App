@@ -43,10 +43,16 @@ src/
 │   └── usePortfolio.js         # Queries/mutations → supabaseDb
 ├── services/
 │   ├── supabaseDb.js           # Transaction CRUD
-│   └── api.js                  # Market data (optional API keys)
+│   ├── api.js                  # Market data (optional API keys)
+│   └── *.test.js               # Vitest unit tests (FIFO, validation, dates)
+api/                            # Vercel serverless price proxies (production)
 supabase/migrations/
-└── 001_initial_schema.sql      # Run in Supabase SQL editor
+├── 001_initial_schema.sql      # Tables, RLS, new-user trigger
+├── 002_transaction_constraints.sql  # Data-integrity checks
+└── 003_fix_rls_recursion.sql   # is_admin() to avoid RLS recursion
 ```
+
+Run the migrations in order in the Supabase SQL editor.
 
 ## 🚀 Getting Started
 
@@ -67,6 +73,8 @@ npm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173). You will be redirected to `/login` until you sign in.
+
+Run the unit tests with `npm test` and the linter with `npm run lint` (both also run in CI on every pull request).
 
 ### Supabase setup
 

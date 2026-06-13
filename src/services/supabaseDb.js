@@ -5,7 +5,7 @@ import { getSupabase } from "../lib/supabaseClient";
 
 // user-entered date/time is interpreted in the browser's local timezone,
 // stored as UTC (ISO string), and converted back to local time for display
-const combineDateAndTime = (date, time) => {
+export const combineDateAndTime = (date, time) => {
   if (!date) return null;
   if (time) {
     const [year, month, day] = date.split("-").map(Number);
@@ -15,7 +15,7 @@ const combineDateAndTime = (date, time) => {
   return date;
 };
 
-const parseDatetime = (datetime) => {
+export const parseDatetime = (datetime) => {
   if (!datetime) return { date: "", time: "" };
   try {
     const dateObj = new Date(datetime);

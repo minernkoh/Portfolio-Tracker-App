@@ -18,16 +18,20 @@ const apiRequestCounter = {
   sessionStart: new Date().toISOString(),
 };
 
+// dev-only console diagnostics; stripped from production builds
+const DEBUG = import.meta.env.DEV;
+
 // log and increment counter for API requests
 const logApiRequest = (api, symbols, fromCache = false) => {
   if (fromCache) {
-    console.log(`📦 [${api}] Cache hit - ${symbols.length} symbol(s): ${symbols.join(', ')}`);
+    if (DEBUG) console.log(`📦 [${api}] Cache hit - ${symbols.length} symbol(s): ${symbols.join(', ')}`);
     return;
   }
-  
+
   apiRequestCounter[api]++;
+  if (!DEBUG) return;
   const total = apiRequestCounter.twelveData + apiRequestCounter.coinGecko + apiRequestCounter.coinGeckoSearch;
-  
+
   console.log(
     `🌐 [${api}] API Request #${apiRequestCounter[api]} | ` +
     `${symbols.length} symbol(s): ${symbols.join(', ')} | ` +
@@ -57,8 +61,8 @@ export const apiStats = {
   },
 };
 
-// make apiStats available in browser console
-if (typeof window !== 'undefined') {
+// make apiStats available in browser console (dev only)
+if (DEBUG && typeof window !== 'undefined') {
   window.apiStats = apiStats;
 }
 

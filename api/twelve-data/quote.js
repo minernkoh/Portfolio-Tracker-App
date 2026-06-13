@@ -1,9 +1,26 @@
 // Vercel serverless function mirroring vite-plugins/secureApiProxy.js for production.
 // Keeps the TwelveData API key server-side instead of embedding it in the JS bundle.
 
+// Block requests from other sites. Same-origin browser GETs omit the Origin
+// header, so we only reject when Origin is present and its host doesn't match
+// the deployment host — this stops cross-site quota abuse without breaking the app.
+function isCrossOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  try {
+    return new URL(origin).host !== req.headers.host;
+  } catch {
+    return true;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.status(405).json({ code: "METHOD_NOT_ALLOWED" });
+    return;
+  }
+  if (isCrossOrigin(req)) {
+    res.status(403).json({ code: "CROSS_ORIGIN_FORBIDDEN" });
     return;
   }
 
@@ -29,6 +46,15 @@ export default async function handler(req, res) {
     const body = Buffer.from(await upstream.arrayBuffer());
     const contentType = upstream.headers.get("content-type");
     if (contentType) res.setHeader("Content-Type", contentType);
+    // cache successful quotes at the Vercel edge so repeat/concurrent requests
+    // are served without re-hitting the upstream API (the client refetches
+    // every 5 min anyway). only cache 2xx so errors aren't memoized.
+    if (upstream.ok) {
+      res.setHeader(
+        "Cache-Control",
+        "public, s-maxage=60, stale-while-revalidate=300"
+      );
+    }
     res.status(upstream.status).send(body);
   } catch (error) {
     console.error("[api/twelve-data]", error);
