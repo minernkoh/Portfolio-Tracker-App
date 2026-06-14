@@ -243,9 +243,13 @@ export default function Dashboard() {
                   </span>
                   {/* calculate 24h change percentage and display with arrow indicator */}
                   {(() => {
-                    // calculate percentage change: (change / previous value) × 100
-                    const changePercent = !hideValues && totalValue > 0
-                      ? (Math.abs(total24hChange) / (totalValue - total24hChange)) * 100
+                    // signed percentage change relative to the value 24h ago
+                    // (totalValue - total24hChange). keep the sign so the arrow
+                    // and color match a gain vs. a loss; format24hChange takes
+                    // the absolute value for the displayed number.
+                    const prevValue = totalValue - total24hChange;
+                    const changePercent = !hideValues && totalValue > 0 && prevValue !== 0
+                      ? (total24hChange / prevValue) * 100
                       : 0;
                     const change24h = format24hChange(changePercent);
                     return (
