@@ -36,6 +36,15 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Only proxy the two CoinGecko endpoints this app uses. Without this the
+  // function is a general-purpose CoinGecko proxy that anyone can point at any
+  // endpoint using your key — the allowlist shrinks that abuse surface.
+  const ALLOWED_PATHS = new Set(["v3/search", "v3/simple/price"]);
+  if (!ALLOWED_PATHS.has(subPath)) {
+    res.status(404).json({ code: "PATH_NOT_ALLOWED" });
+    return;
+  }
+
   // rebuild the query string without the catch-all `path` parameter
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(req.query)) {
@@ -58,11 +67,12 @@ export default async function handler(req, res) {
     const contentType = upstream.headers.get("content-type");
     if (contentType) res.setHeader("Content-Type", contentType);
     // cache successful responses at the Vercel edge to absorb repeat/concurrent
-    // requests without re-hitting CoinGecko. only cache 2xx.
+    // requests without re-hitting CoinGecko. 5 min matches the client refresh
+    // cadence; only cache 2xx.
     if (upstream.ok) {
       res.setHeader(
         "Cache-Control",
-        "public, s-maxage=60, stale-while-revalidate=300"
+        "public, s-maxage=300, stale-while-revalidate=600"
       );
     }
     res.status(upstream.status).send(body);

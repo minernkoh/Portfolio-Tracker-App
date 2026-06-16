@@ -47,12 +47,12 @@ export default async function handler(req, res) {
     const contentType = upstream.headers.get("content-type");
     if (contentType) res.setHeader("Content-Type", contentType);
     // cache successful quotes at the Vercel edge so repeat/concurrent requests
-    // are served without re-hitting the upstream API (the client refetches
-    // every 5 min anyway). only cache 2xx so errors aren't memoized.
+    // are served without re-hitting the upstream API. 5 min matches the client
+    // refresh cadence; only cache 2xx so errors aren't memoized.
     if (upstream.ok) {
       res.setHeader(
         "Cache-Control",
-        "public, s-maxage=60, stale-while-revalidate=300"
+        "public, s-maxage=300, stale-while-revalidate=600"
       );
     }
     res.status(upstream.status).send(body);
