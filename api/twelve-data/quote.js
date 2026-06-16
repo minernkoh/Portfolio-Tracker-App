@@ -14,6 +14,26 @@ function isCrossOrigin(req) {
   }
 }
 
+// Require a valid Supabase session before spending upstream quota. Edge cache
+// hits are served without invoking this function, so only quota-consuming cache
+// misses pay the verification round-trip. Fails closed if Supabase env is unset.
+async function isAuthed(req) {
+  const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!token) return false;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const anon =
+    process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+  if (!url || !anon) return false;
+  try {
+    const r = await fetch(`${url}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: anon },
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.status(405).json({ code: "METHOD_NOT_ALLOWED" });
@@ -21,6 +41,10 @@ export default async function handler(req, res) {
   }
   if (isCrossOrigin(req)) {
     res.status(403).json({ code: "CROSS_ORIGIN_FORBIDDEN" });
+    return;
+  }
+  if (!(await isAuthed(req))) {
+    res.status(401).json({ code: "UNAUTHORIZED" });
     return;
   }
 
@@ -47,12 +71,12 @@ export default async function handler(req, res) {
     const contentType = upstream.headers.get("content-type");
     if (contentType) res.setHeader("Content-Type", contentType);
     // cache successful quotes at the Vercel edge so repeat/concurrent requests
-    // are served without re-hitting the upstream API (the client refetches
-    // every 5 min anyway). only cache 2xx so errors aren't memoized.
+    // are served without re-hitting the upstream API. 5 min matches the client
+    // refresh cadence; only cache 2xx so errors aren't memoized.
     if (upstream.ok) {
       res.setHeader(
         "Cache-Control",
-        "public, s-maxage=60, stale-while-revalidate=300"
+        "public, s-maxage=300, stale-while-revalidate=600"
       );
     }
     res.status(upstream.status).send(body);

@@ -3,8 +3,25 @@
 
 import { setToCache, getAnyCached, getCachedBatch, getSimpleCache, setSimpleCache } from './cache';
 import { CRYPTO_MAP } from '../constants/assets';
+import { getSupabase } from '../lib/supabaseClient';
 
 // Same-origin proxy adds keys server-side (dev/preview); never embed secrets in the client bundle.
+
+// Attach the Supabase session token so the production /api proxies can reject
+// unauthenticated callers (protects free-tier quota). getSession() refreshes a
+// near-expired token. In dev the proxy ignores the header, so this is harmless.
+const authHeaders = async () => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return {};
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {};
+  } catch {
+    return {};
+  }
+};
 
 const CACHE_KEY_STOCKS = "portfolio_price_cache_stocks";
 const CACHE_KEY_CRYPTO = "portfolio_price_cache_crypto";
@@ -159,7 +176,9 @@ export const fetchStockPrices = async (tickers = []) => {
     // this is more efficient than individual requests and reduces rate limit usage
     const symbolsParam = uncachedTickers.map((t) => encodeURIComponent(t.trim())).join(",");
     logApiRequest('twelveData', uncachedTickers);
-    const response = await fetch(`/api/twelve-data/quote?symbol=${symbolsParam}`);
+    const response = await fetch(`/api/twelve-data/quote?symbol=${symbolsParam}`, {
+      headers: await authHeaders(),
+    });
 
     if (!response.ok) {
       if (response.status === 503) {
@@ -231,7 +250,8 @@ const searchCryptoByTicker = async (ticker) => {
   try {
     logApiRequest('coinGeckoSearch', [ticker]);
     const response = await fetch(
-      `/api/coingecko/v3/search?query=${encodeURIComponent(ticker)}`
+      `/api/coingecko/v3/search?query=${encodeURIComponent(ticker)}`,
+      { headers: await authHeaders() }
     );
 
     if (!response.ok) return null;
@@ -326,7 +346,8 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
     // batch fetch prices for all crypto IDs (one API call)
     logApiRequest('coinGecko', uncachedTickers);
     const response = await fetch(
-      `/api/coingecko/v3/simple/price?ids=${encodeURIComponent(cryptoIds.join(","))}&vs_currencies=usd&include_24hr_change=true`
+      `/api/coingecko/v3/simple/price?ids=${encodeURIComponent(cryptoIds.join(","))}&vs_currencies=usd&include_24hr_change=true`,
+      { headers: await authHeaders() }
     );
 
     if (!response.ok) {
