@@ -142,3 +142,11 @@ Stock and crypto price requests go to same-origin `/api/twelve-data/*` and `/api
 - **Production (Vercel)**: the serverless functions in `api/` implement the same routes. Set `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` in the Vercel project environment variables.
 
 If no keys are configured, pricing degrades gracefully (cached/zero prices) instead of breaking the app.
+
+### Abuse protection (free-tier quotas)
+
+The production `api/` functions defend the upstream free-tier quotas in layers:
+
+- **Auth-gated**: each request must carry the caller's Supabase session token (the client attaches it automatically); the function verifies it against Supabase before calling upstream. Unauthenticated callers get `401` and never reach the upstream API. The functions read `SUPABASE_URL`/`SUPABASE_ANON_KEY` (or the `VITE_`-prefixed equivalents, which Vercel also exposes to functions at runtime) and **fail closed** if neither is set.
+- **Edge cached** for 5 minutes (`s-maxage=300`), so repeat/concurrent requests are served by Vercel's edge without spending quota. Cache hits skip the function entirely — harmless, since the cached data is public market prices, not user data.
+- **Same-origin only** and, for CoinGecko, **restricted to the two endpoints the app uses**.

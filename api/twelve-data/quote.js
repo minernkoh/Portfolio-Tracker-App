@@ -14,6 +14,26 @@ function isCrossOrigin(req) {
   }
 }
 
+// Require a valid Supabase session before spending upstream quota. Edge cache
+// hits are served without invoking this function, so only quota-consuming cache
+// misses pay the verification round-trip. Fails closed if Supabase env is unset.
+async function isAuthed(req) {
+  const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!token) return false;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const anon =
+    process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+  if (!url || !anon) return false;
+  try {
+    const r = await fetch(`${url}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: anon },
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.status(405).json({ code: "METHOD_NOT_ALLOWED" });
@@ -21,6 +41,10 @@ export default async function handler(req, res) {
   }
   if (isCrossOrigin(req)) {
     res.status(403).json({ code: "CROSS_ORIGIN_FORBIDDEN" });
+    return;
+  }
+  if (!(await isAuthed(req))) {
+    res.status(401).json({ code: "UNAUTHORIZED" });
     return;
   }
 
