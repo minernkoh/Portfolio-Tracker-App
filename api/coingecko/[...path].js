@@ -1,52 +1,10 @@
 // Vercel serverless function mirroring vite-plugins/secureApiProxy.js for production.
 // Forwards /api/coingecko/* to api.coingecko.com and attaches the API key server-side.
 
-// Block requests from other sites. Same-origin browser GETs omit the Origin
-// header, so we only reject when Origin is present and its host doesn't match
-// the deployment host — this stops cross-site quota abuse without breaking the app.
-function isCrossOrigin(req) {
-  const origin = req.headers.origin;
-  if (!origin) return false;
-  try {
-    return new URL(origin).host !== req.headers.host;
-  } catch {
-    return true;
-  }
-}
-
-// Require a valid Supabase session before spending upstream quota. Edge cache
-// hits are served without invoking this function, so only quota-consuming cache
-// misses pay the verification round-trip. Fails closed if Supabase env is unset.
-async function isAuthed(req) {
-  const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
-  if (!token) return false;
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-  const anon =
-    process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
-  if (!url || !anon) return false;
-  try {
-    const r = await fetch(`${url}/auth/v1/user`, {
-      headers: { Authorization: `Bearer ${token}`, apikey: anon },
-    });
-    return r.ok;
-  } catch {
-    return false;
-  }
-}
+import { guardPriceRequest } from "../_lib/guard.js";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    res.status(405).json({ code: "METHOD_NOT_ALLOWED" });
-    return;
-  }
-  if (isCrossOrigin(req)) {
-    res.status(403).json({ code: "CROSS_ORIGIN_FORBIDDEN" });
-    return;
-  }
-  if (!(await isAuthed(req))) {
-    res.status(401).json({ code: "UNAUTHORIZED" });
-    return;
-  }
+  if (!(await guardPriceRequest(req, res))) return;
 
   const apiKey =
     process.env.COINGECKO_API_KEY || process.env.VITE_COINGECKO_API_KEY || "";
