@@ -1,6 +1,15 @@
 // this file contains helper functions used throughout the app
 // these are utility functions that format numbers and calculate values
 
+// format date as YYYY-MM-DD - shared across api, airtable, historicalPrices, charts
+export const formatDateToISO = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 // format a number with up to 10 decimal places, showing only what's necessary
 // example: formatNumber(1.50000000) returns "1.5"
 export const formatNumber = (value, maxDecimals = 10) => {
@@ -230,17 +239,48 @@ export const calculateUnrealizedPnL = (quantity, avgPrice, currentPrice) => {
   return current - cost; // profit (positive) or loss (negative)
 };
 
-// normalize asset type to "Stock" or "Crypto"
+// normalize asset type to "Stock", "Crypto", or "Commodity"
 // handles various input formats and normalizes to standard format
 export const normalizeAssetType = (assetType) => {
   if (!assetType) return "Stock";
-  
+
   if (typeof assetType === "string") {
     const normalized = assetType.trim().replace(/\n/g, "").toLowerCase();
-    return normalized === "crypto" ? "Crypto" : "Stock";
+    if (normalized === "crypto") return "Crypto";
+    if (normalized === "commodity") return "Commodity";
+    return "Stock";
   }
-  
+
   return "Stock";
+};
+
+// comparator for transaction sorting - used by useSort with sortData
+// handles date, cost/total, quantity, price, and string fields
+export const transactionSortComparator = (a, b, key, direction) => {
+  if (key === "date") {
+    const dateTimeA = a.time ? `${a.date}T${a.time}` : a.date;
+    const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
+    const dateComparison = new Date(dateTimeA) - new Date(dateTimeB);
+    if (dateComparison === 0) {
+      const typeA = a.type?.toLowerCase() === "buy" ? 0 : 1;
+      const typeB = b.type?.toLowerCase() === "buy" ? 0 : 1;
+      return direction === "asc" ? typeA - typeB : typeB - typeA;
+    }
+    return direction === "asc" ? dateComparison : -dateComparison;
+  }
+  if (key === "cost" || key === "total") {
+    const valA = a.quantity * a.price;
+    const valB = b.quantity * b.price;
+    return direction === "asc" ? valA - valB : valB - valA;
+  }
+  if (["quantity", "price"].includes(key)) {
+    const valA = Number(a[key]);
+    const valB = Number(b[key]);
+    return direction === "asc" ? valA - valB : valB - valA;
+  }
+  const strA = String(a[key] ?? "").toLowerCase();
+  const strB = String(b[key] ?? "").toLowerCase();
+  return direction === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
 };
 
 // format transaction type to "Buy" or "Sell" with proper capitalization

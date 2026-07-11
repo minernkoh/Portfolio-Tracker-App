@@ -176,7 +176,7 @@ function AssetRow({
           {formatCurrency(asset.totalValue, hideValues)}
         </div>
         <div className="text-xs text-[var(--text-secondary)]" style={{ whiteSpace: 'nowrap' }}>
-          {asset.assetType === 'Crypto' ? formatQuantity(asset.quantity) : formatQuantity4SF(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
+          {asset.assetType === 'Crypto' ? formatQuantity(asset.quantity) : asset.assetType === 'Commodity' ? formatQuantity(asset.quantity) : formatQuantity4SF(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : asset.assetType === 'Commodity' ? 'oz' : 'shares'}
         </div>
       </td>
 

@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { SpinnerGap } from "@phosphor-icons/react";
 import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
-import { getStockLogo, fetchStockPrices, fetchCryptoPrices, getCryptoInfo } from "../services/api";
+import { getStockLogo, getCommodityLogo, fetchStockPrices, fetchCryptoPrices, fetchCommodityPrices, getCryptoInfo } from "../services/api";
 import { formatPriceInput } from "../services/utils";
 import { findAssetByTicker, searchAssets, getAssetsByType } from "../constants/assets";
 import FormInput from "./ui/FormInput";
@@ -79,7 +79,8 @@ export default function TransactionFormModal({
       });
 
       if (isNewTransaction && tickerValue && !hasPrice && !isEditMode) {
-        fetchCurrentPrice(tickerValue, assetTypeValue === "crypto" ? "Crypto" : "Stock", false);
+        const typeForFetch = assetTypeValue === "crypto" ? "Crypto" : assetTypeValue === "commodity" ? "Commodity" : "Stock";
+        fetchCurrentPrice(tickerValue, typeForFetch, false);
       }
     } else {
       setFormData(getDefaultFormData());
@@ -107,7 +108,8 @@ export default function TransactionFormModal({
     setIsFetchingPrice(true);
     try {
       // choose appropriate API based on asset type
-      const fetchFn = assetType.toLowerCase() === "crypto" ? fetchCryptoPrices : fetchStockPrices;
+      const typeLower = assetType.toLowerCase();
+      const fetchFn = typeLower === "crypto" ? fetchCryptoPrices : typeLower === "commodity" ? fetchCommodityPrices : fetchStockPrices;
       const prices = await fetchFn([ticker]);
       const priceData = prices[ticker];
       
@@ -143,7 +145,7 @@ export default function TransactionFormModal({
       ticker: asset.ticker,
       name: asset.name,
       assetType: asset.type.toLowerCase(),
-      logo: asset.type === "Stock" ? getStockLogo(asset.ticker) : asset.logo,
+      logo: asset.type === "Stock" ? getStockLogo(asset.ticker) : asset.type === "Commodity" ? getCommodityLogo(asset.ticker) : asset.logo,
       price: tickerChanged ? "" : prev.price?.trim() || "",
     }));
     
@@ -182,7 +184,7 @@ export default function TransactionFormModal({
         ticker: upperValue,
         name: match.name,
         assetType: match.type.toLowerCase(),
-        logo: match.type === "Stock" ? getStockLogo(match.ticker) : match.logo,
+        logo: match.type === "Stock" ? getStockLogo(match.ticker) : match.type === "Commodity" ? getCommodityLogo(match.ticker) : match.logo,
         price: tickerChanged ? "" : existingPrice,
       }));
       if (tickerChanged) {
@@ -215,6 +217,13 @@ export default function TransactionFormModal({
           fetchCurrentPrice(upperValue, "Crypto", true);
         } else if (!existingPrice) {
           fetchCurrentPrice(upperValue, "Crypto", false);
+        }
+      } else if (currentType === "commodity") {
+        setFormData(prev => ({ ...prev, ticker: upperValue, name: "", assetType: "commodity", logo: getCommodityLogo(upperValue), price: tickerChanged ? "" : existingPrice }));
+        if (tickerChanged) {
+          fetchCurrentPrice(upperValue, "Commodity", true);
+        } else if (!existingPrice) {
+          fetchCurrentPrice(upperValue, "Commodity", false);
         }
       } else {
         setFormData(prev => ({ ...prev, ticker: upperValue, assetType: "stock", price: tickerChanged ? "" : existingPrice }));
@@ -355,7 +364,8 @@ export default function TransactionFormModal({
     if (!validateForm()) return;
 
     const finalName = formData.name || formData.ticker;
-    const finalType = formData.assetType?.toLowerCase() === "crypto" ? "Crypto" : "Stock";
+    const typeLower = formData.assetType?.toLowerCase();
+    const finalType = typeLower === "crypto" ? "Crypto" : typeLower === "commodity" ? "Commodity" : "Stock";
 
     setIsSubmitting(true);
     try {
@@ -438,6 +448,7 @@ export default function TransactionFormModal({
                 options={[
                   { value: "stock", label: "Stock" },
                   { value: "crypto", label: "Crypto" },
+                  { value: "commodity", label: "Commodity" },
                 ]}
                 value={formData.assetType}
                 onChange={(assetType) => {
@@ -489,7 +500,7 @@ export default function TransactionFormModal({
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleTickerAutofill(e.target.value); setShowDropdown(false); } }}
                   onFocus={() => { if (!formData.ticker) { setShowPopularDropdown(true); setShowDropdown(false); } else { setShowDropdown(true); } }}
                   onBlur={() => { setTimeout(() => { setShowDropdown(false); setShowPopularDropdown(false); }, 200); if (formData.ticker) handleTickerAutofill(formData.ticker); }}
-                  placeholder={formData.assetType === "crypto" ? "e.g. BTC, ETH" : "e.g. AAPL, MSFT"}
+                  placeholder={formData.assetType === "crypto" ? "e.g. BTC, ETH" : formData.assetType === "commodity" ? "e.g. GOLD, SILVER" : "e.g. AAPL, MSFT"}
                   error={errors.ticker}
                   disabled={isSubmitting}
                 />

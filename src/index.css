@@ -4,6 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CSS variables aligned with src/design-system/themes.js (darkTheme / lightTheme) */
 :root {
   /* matte black theme (stockpenguins inspired) - default dark mode */
   --bg-app: #09090b;       /* zinc 950 */

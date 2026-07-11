@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeftIcon, CaretUp, CaretDown } from '@phosphor-icons/react';
-import { formatCurrency, formatQuantity, formatQuantity4SF, calculatePortfolioData, formatDateTime, truncateName, calculatePnLPercentage, format24hChange, formatPrice } from '../services/utils';
+import { formatCurrency, formatQuantity, formatQuantity4SF, calculatePortfolioData, formatDateTime, truncateName, calculatePnLPercentage, format24hChange, formatPrice, transactionSortComparator } from '../services/utils';
 import AssetLogo from './ui/AssetLogo';
 import Layout from './Layout';
 import TransactionFormModal from './TransactionFormModal';
@@ -45,39 +45,9 @@ export default function AssetDetails() {
   // sorting for transaction history table
   const { handleSort, sortData, getSortDirection } = useSort({ key: 'date', direction: 'desc' });
   
-  // sort transactions with custom comparator (same logic as Dashboard)
   const sortedTransactions = useMemo(() => {
     if (!asset?.transactions) return [];
-    return sortData(asset.transactions, (a, b, key, direction) => {
-      if (key === 'date') {
-        // combine date and time for accurate sorting
-        const dateTimeA = a.time ? `${a.date}T${a.time}` : a.date;
-        const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
-        const dateComparison = new Date(dateTimeA) - new Date(dateTimeB);
-        
-        // if dates are equal, use secondary sort by type
-        // for descending (newest first): Sells before Buys (reverse of FIFO)
-        // for ascending (oldest first): Buys before Sells (FIFO order)
-        if (dateComparison === 0) {
-          const typeA = a.type?.toLowerCase() === 'buy' ? 0 : 1;
-          const typeB = b.type?.toLowerCase() === 'buy' ? 0 : 1;
-          return direction === 'asc' ? typeA - typeB : typeB - typeA;
-        }
-        
-        return direction === 'asc' ? dateComparison : -dateComparison;
-      }
-      if (key === 'total') {
-        const valA = a.quantity * a.price;
-        const valB = b.quantity * b.price;
-        return direction === 'asc' ? valA - valB : valB - valA;
-      }
-      if (['quantity', 'price'].includes(key)) {
-        return direction === 'asc' ? Number(a[key]) - Number(b[key]) : Number(b[key]) - Number(a[key]);
-      }
-      const strA = String(a[key]).toLowerCase();
-      const strB = String(b[key]).toLowerCase();
-      return direction === 'asc' ? strA.localeCompare(strB) : strB.localeCompare(strA);
-    });
+    return sortData(asset.transactions, transactionSortComparator);
   }, [asset?.transactions, sortData]);
   
   // handle delete with confirmation
@@ -157,7 +127,7 @@ export default function AssetDetails() {
             <div>
               <div className="text-xs text-[var(--text-secondary)] mb-0.5">Holdings</div>
               <div className="text-sm font-bold text-[var(--text-primary)]">
-                {formatQuantity(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
+                {formatQuantity(asset.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : asset.assetType === 'Commodity' ? 'oz' : 'shares'}
               </div>
             </div>
             <div>
@@ -230,7 +200,7 @@ export default function AssetDetails() {
                       <td className="py-4 px-6"><TransactionTypeBadge type={tx.type} /></td>
                       <td className="py-4 px-6 text-right text-sm text-[var(--text-primary)]">{formatPrice(tx.price)}</td>
                       <td className="py-4 px-6 text-right text-sm text-[var(--text-primary)]">
-                        {asset.assetType === 'Crypto' ? formatQuantity(tx.quantity) : formatQuantity4SF(tx.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : 'shares'}
+                        {asset.assetType === 'Crypto' ? formatQuantity(tx.quantity) : formatQuantity4SF(tx.quantity)} {asset.assetType === 'Crypto' ? asset.ticker : asset.assetType === 'Commodity' ? 'oz' : 'shares'}
                       </td>
                       <td className="py-4 px-6 text-right text-sm text-[var(--text-primary)]">{formatCurrency(tx.quantity * tx.price)}</td>
                       <td className="py-4 px-6 text-right">

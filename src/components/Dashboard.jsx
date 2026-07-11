@@ -1,7 +1,6 @@
 // main dashboard component - displays portfolio, charts, and transaction management
 
 import React, { useState, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import Layout from "./Layout";
 import PortfolioCharts from "./PortfolioCharts";
 import PortfolioTable from "./PortfolioTable";
@@ -16,7 +15,6 @@ import EmptyState from "./ui/EmptyState";
 import {
   formatCurrency,
   formatQuantity,
-  calculatePortfolioData,
   formatDateTime,
   calculatePnLPercentage,
   format24hChange,
@@ -24,34 +22,42 @@ import {
 import {
   useTransactions,
   usePrices,
+  useHistoricalPrices,
   useDeleteAsset,
   useDeleteTransaction,
+  useAirtableStatus,
 } from "../hooks/usePortfolio";
-import { useAuth } from "../context/AuthContext";
 import { useTransactionModal } from "../hooks/useTransactionModal";
-import { EyeIcon, EyeSlashIcon, ArrowClockwiseIcon, CaretUp, CaretDown, Sun, Moon, SignOut } from "@phosphor-icons/react";
+import { EyeIcon, EyeSlashIcon, ArrowClockwiseIcon, CaretUp, CaretDown, Sun, Moon } from "@phosphor-icons/react";
 import { useSort } from "../hooks/useSort";
 import { useTheme } from "../hooks/useTheme";
+import { usePortfolioStats } from "../hooks/usePortfolioStats";
+import { useTransactionFilters } from "../hooks/useTransactionFilters";
 
 export default function Dashboard() {
   // theme hook
   const { theme, toggleTheme } = useTheme();
   
-  const navigate = useNavigate();
-  const { signOut, isAdmin, user, loading: authLoading } = useAuth();
-
-  const handleSignOut = useCallback(async () => {
-    await signOut();
-    navigate("/login", { replace: true });
-  }, [signOut, navigate]);
-
+  // data fetching hooks
+  const { isEnabled: isAirtableEnabled } = useAirtableStatus();
   const { data: transactions = [], isLoading, error: loadError, refetch } = useTransactions();
   const { prices, isFetching: pricesFetching } = usePrices(transactions);
+  const { data: historicalPrices = {} } = useHistoricalPrices(transactions);
   const deleteAsset = useDeleteAsset();
   const deleteTransactionMutation = useDeleteTransaction();
 
-  // calculate portfolio data
-  const portfolioData = useMemo(() => calculatePortfolioData(transactions, prices), [transactions, prices]);
+  // portfolio stats and filters
+  const {
+    portfolioData,
+    totalValue,
+    totalPnL,
+    total24hChange,
+    totalCostBasis,
+    bestPerformer,
+    worstPerformer,
+    is24hPositive,
+    isPositive,
+  } = usePortfolioStats(transactions, prices);
 
   // transaction modal hook
   const {
@@ -65,42 +71,18 @@ export default function Dashboard() {
     isPending,
   } = useTransactionModal();
 
-  // ui state
+  // ui state - filterType must be before useTransactionFilters
   const [hideValues, setHideValues] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [filterType, setFilterType] = useState("All");
-  // sorting hook for transactions table
-  const { handleSort: handleTxSort, sortData, getSortDirection: getTxSortDirection } = useSort({ key: "date", direction: "desc" });
 
-  // portfolio calculations - memoized to avoid recalculating on every render
-  // total market value of all assets
-  const totalValue = useMemo(() => portfolioData.reduce((sum, a) => sum + a.totalValue, 0), [portfolioData]);
-  // total profit/loss (unrealized gains/losses)
-  const totalPnL = useMemo(() => portfolioData.reduce((sum, a) => sum + a.pnl, 0), [portfolioData]);
-  // total 24h change in portfolio value (priceChange24h is a percentage)
-  const total24hChange = useMemo(() => {
-    return portfolioData.reduce((sum, a) => sum + (a.priceChange24h / 100) * a.currentPrice * a.quantity, 0);
-  }, [portfolioData]);
-
-  const is24hPositive = total24hChange >= 0;
-  const isPositive = totalPnL >= 0;
-  // calculate total cost basis (total amount paid for all assets)
-  const totalCostBasis = useMemo(() => portfolioData.reduce((sum, a) => sum + a.totalCost, 0), [portfolioData]);
-
-  // find best/worst performers by percentage return
-  // sort by PnL percentage (profit/loss divided by cost basis)
-  const sortedByPerf = useMemo(() => {
-    return [...portfolioData].sort((a, b) => {
-      // calculate percentage return for each asset
-      const pnlPercentA = a.totalCost > 0 ? a.pnl / a.totalCost : 0;
-      const pnlPercentB = b.totalCost > 0 ? b.pnl / b.totalCost : 0;
-      // sort descending (highest return first)
-      return pnlPercentB - pnlPercentA;
-    });
-  }, [portfolioData]);
-
-  const bestPerformer = sortedByPerf[0] || null;
-  const worstPerformer = sortedByPerf[sortedByPerf.length - 1] || null;
+  const { sortData, handleSort: handleTxSort, getSortDirection: getTxSortDirection } = useSort({ key: "date", direction: "desc" });
+  const { allTransactionsSorted, filteredPortfolioData } = useTransactionFilters(
+    transactions,
+    portfolioData,
+    filterType,
+    sortData
+  );
 
   // delete asset handler - removes all transactions for a given ticker
   const handleDeleteAsset = useCallback(async (ticker) => {
@@ -118,61 +100,14 @@ export default function Dashboard() {
     }
   }, [deleteTransactionMutation]);
 
-  // filter and sort transactions based on current filter and sort settings
-  const allTransactionsSorted = useMemo(() => {
-    // first filter by asset type (All/Stock/Crypto)
-    const filtered = transactions.filter((tx) => filterType === "All" || tx.assetType === filterType);
-    // then apply sorting with custom comparator
-    return sortData(filtered, (a, b, key, direction) => {
-      if (key === "date") {
-        // combine date and time for accurate chronological sorting
-        const dateTimeA = a.time ? `${a.date}T${a.time}` : a.date;
-        const dateTimeB = b.time ? `${b.date}T${b.time}` : b.date;
-        const dateComparison = new Date(dateTimeA) - new Date(dateTimeB);
-        
-        // if dates are equal, use secondary sort by transaction type
-        // for descending (newest first): Sells before Buys (reverse of FIFO)
-        // for ascending (oldest first): Buys before Sells (FIFO order)
-        if (dateComparison === 0) {
-          const typeA = a.type?.toLowerCase() === 'buy' ? 0 : 1;
-          const typeB = b.type?.toLowerCase() === 'buy' ? 0 : 1;
-          return direction === 'asc' ? typeA - typeB : typeB - typeA;
-        }
-        
-        return direction === "asc" ? dateComparison : -dateComparison;
-      }
-      if (key === "cost") {
-        // calculate total cost (quantity × price) for comparison
-        const valA = a.quantity * a.price;
-        const valB = b.quantity * b.price;
-        return direction === "asc" ? valA - valB : valB - valA;
-      }
-      if (["quantity", "price"].includes(key)) {
-        // numeric comparison for quantity and price
-        return direction === "asc" ? Number(a[key]) - Number(b[key]) : Number(b[key]) - Number(a[key]);
-      }
-      // string comparison for text fields (ticker, type, etc.)
-      const strA = String(a[key]).toLowerCase();
-      const strB = String(b[key]).toLowerCase();
-      return direction === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
-    });
-  }, [transactions, filterType, sortData]);
-
-
-  // filter portfolio data
-  const filteredPortfolioData = useMemo(() => {
-    if (filterType === "All") return portfolioData;
-    return portfolioData.filter((a) => a.assetType === filterType);
-  }, [portfolioData, filterType]);
-
   // loading state
-  if (authLoading || isLoading) return <LoadingState fullScreen={false} />;
+  if (isLoading) return <LoadingState fullScreen={false} />;
 
   // error state
-  if (loadError) {
-    const errorMessage =
-      loadError?.message ||
-      "Failed to load portfolio data. Check Supabase URL, anon key, and database policies.";
+  if (loadError || (!isAirtableEnabled && transactions.length === 0)) {
+    const errorMessage = !isAirtableEnabled
+      ? "API configuration missing. Please add VITE_API_URL to .env file."
+      : loadError?.message || "Failed to load portfolio data. Please try again.";
 
     return (
       <Layout>
@@ -201,13 +136,8 @@ export default function Dashboard() {
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
           <div className="flex flex-col gap-4">
             <div>
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <div className="flex items-center gap-2 mb-2">
                 <h1 className="text-xl font-bold text-[var(--text-primary)]">My Portfolio</h1>
-                {isAdmin && (
-                  <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40">
-                    Admin
-                  </span>
-                )}
                 <button
                   onClick={() => setHideValues((prev) => !prev)}
                   className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
@@ -249,20 +179,7 @@ export default function Dashboard() {
               onChange={setActiveTab}
             />
           </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            {user?.email && (
-              <span className="text-xs text-[var(--text-secondary)] max-w-[140px] truncate hidden sm:inline" title={user.email}>
-                {user.email}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => handleSignOut()}
-              className="p-2 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors"
-              title="Sign out"
-            >
-              <SignOut size={18} weight="bold" />
-            </button>
+          <div className="flex items-center gap-3">
             <ButtonGroup
               variant="themeToggle"
               options={[
@@ -347,7 +264,7 @@ export default function Dashboard() {
             </div>
 
             {/* charts */}
-            <PortfolioCharts portfolioData={portfolioData} transactions={transactions} prices={prices} hideValues={hideValues} />
+            <PortfolioCharts portfolioData={portfolioData} transactions={transactions} prices={prices} historicalPrices={historicalPrices} hideValues={hideValues} />
 
             {/* assets table */}
             <div>
@@ -355,7 +272,7 @@ export default function Dashboard() {
                 <h2 className="text-lg font-bold text-[var(--text-primary)]">Assets</h2>
                 <ButtonGroup
                   variant="pills"
-                  options={["All", "Stock", "Crypto"]}
+                  options={["All", "Stock", "Crypto", "Commodity"]}
                   value={filterType}
                   onChange={setFilterType}
                   labelMap={{ Stock: "Stocks" }}

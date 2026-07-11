@@ -1,13 +1,18 @@
-// api services for fetching stock and crypto prices
+// api services for fetching stock, crypto, and commodity prices
 // uses centralized caching utilities for localStorage
 
 import { getFromCache, setToCache, getAnyCached, getCachedBatch, getSimpleCache, setSimpleCache } from './cache';
-import { CRYPTO_MAP } from '../constants/assets';
+import { CRYPTO_MAP, COMMODITY_MAP } from '../constants/assets';
+import { formatDateToISO } from './utils';
 
-// Same-origin proxy adds keys server-side (dev/preview); never embed secrets in the client bundle.
+const TWELVE_DATA_API_KEY = import.meta.env.VITE_TWELVE_DATA_API_KEY;
+const COINGECKO_API_KEY = import.meta.env.VITE_COINGECKO_API_KEY;
+const BULLIONSTAR_API_KEY = import.meta.env.VITE_BULLIONSTAR_API_KEY;
+const BULLIONSTAR_API_BASE = import.meta.env.VITE_BULLIONSTAR_API_BASE || 'https://api.bullionstar.com';
 
 const CACHE_KEY_STOCKS = "portfolio_price_cache_stocks";
 const CACHE_KEY_CRYPTO = "portfolio_price_cache_crypto";
+const CACHE_KEY_COMMODITIES = "portfolio_price_cache_commodities";
 const CRYPTO_INFO_CACHE_KEY = "portfolio_crypto_info_cache";
 
 // API request counter - tracks API requests for debugging and monitoring
@@ -15,6 +20,7 @@ const apiRequestCounter = {
   twelveData: 0,
   coinGecko: 0,
   coinGeckoSearch: 0,
+  bullionStar: 0,
   sessionStart: new Date().toISOString(),
 };
 
@@ -26,7 +32,7 @@ const logApiRequest = (api, symbols, fromCache = false) => {
   }
   
   apiRequestCounter[api]++;
-  const total = apiRequestCounter.twelveData + apiRequestCounter.coinGecko + apiRequestCounter.coinGeckoSearch;
+  const total = apiRequestCounter.twelveData + apiRequestCounter.coinGecko + apiRequestCounter.coinGeckoSearch + apiRequestCounter.bullionStar;
   
   console.log(
     `🌐 [${api}] API Request #${apiRequestCounter[api]} | ` +
@@ -38,11 +44,12 @@ const logApiRequest = (api, symbols, fromCache = false) => {
 // export counter for console access: apiStats.get(), apiStats.reset()
 export const apiStats = {
   get: () => {
-    const total = apiRequestCounter.twelveData + apiRequestCounter.coinGecko + apiRequestCounter.coinGeckoSearch;
+    const total = apiRequestCounter.twelveData + apiRequestCounter.coinGecko + apiRequestCounter.coinGeckoSearch + apiRequestCounter.bullionStar;
     console.table({
       'Twelve Data (stocks)': apiRequestCounter.twelveData,
       'CoinGecko (prices)': apiRequestCounter.coinGecko,
       'CoinGecko (search)': apiRequestCounter.coinGeckoSearch,
+      'BullionStar (commodities)': apiRequestCounter.bullionStar,
       'Total': total,
       'Session started': apiRequestCounter.sessionStart,
     });
@@ -52,6 +59,7 @@ export const apiStats = {
     apiRequestCounter.twelveData = 0;
     apiRequestCounter.coinGecko = 0;
     apiRequestCounter.coinGeckoSearch = 0;
+    apiRequestCounter.bullionStar = 0;
     apiRequestCounter.sessionStart = new Date().toISOString();
     console.log('🔄 API request counters reset');
   },
@@ -108,6 +116,11 @@ export const getStockLogo = (ticker) => {
 const getCryptoLogo = (ticker) =>
   CRYPTO_MAP[ticker]?.logo || `https://ui-avatars.com/api/?name=${ticker}&background=random`;
 
+export const getCommodityLogo = (ticker) => {
+  const color = getTickerColor(ticker);
+  return `https://ui-avatars.com/api/?name=${ticker}&background=${color}&color=fff&bold=true`;
+};
+
 // check if response indicates rate limiting
 const isRateLimited = (response, data) => {
   if (response.status === 429 || response.status === 403) return true;
@@ -150,17 +163,27 @@ export const fetchStockPrices = async (tickers = []) => {
     return priceMap;
   }
 
+  if (!TWELVE_DATA_API_KEY) {
+    console.warn("TwelveData API key not found");
+    uncachedTickers.forEach((ticker) => {
+      const cached = getAnyCached(CACHE_KEY_STOCKS, ticker);
+      priceMap[ticker] = cached 
+        ? { ...cached, logo: getStockLogo(ticker) }
+        : { currentPrice: 0, priceChange24h: 0, logo: getStockLogo(ticker), name: null };
+    });
+    return priceMap;
+  }
+
   try {
     // batch request: fetch all uncached symbols in one API call
     // this is more efficient than individual requests and reduces rate limit usage
-    const symbolsParam = uncachedTickers.map((t) => encodeURIComponent(t.trim())).join(",");
+    const symbolsParam = uncachedTickers.join(',');
     logApiRequest('twelveData', uncachedTickers);
-    const response = await fetch(`/api/twelve-data/quote?symbol=${symbolsParam}`);
+    const response = await fetch(
+      `https://api.twelvedata.com/quote?symbol=${symbolsParam}&apikey=${TWELVE_DATA_API_KEY}`
+    );
 
     if (!response.ok) {
-      if (response.status === 503) {
-        console.warn("TwelveData unavailable (proxy not configured or server error)");
-      }
       // handle rate limiting or API errors gracefully
       if (isRateLimited(response)) {
         console.warn("TwelveData rate limit hit, using cache");
@@ -225,9 +248,11 @@ const searchCryptoByTicker = async (ticker) => {
   if (cache[ticker]) return cache[ticker];
 
   try {
+    const headers = COINGECKO_API_KEY ? { "x-cg-demo-api-key": COINGECKO_API_KEY } : {};
     logApiRequest('coinGeckoSearch', [ticker]);
     const response = await fetch(
-      `/api/coingecko/v3/search?query=${encodeURIComponent(ticker)}`
+      `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(ticker)}`,
+      { headers }
     );
 
     if (!response.ok) return null;
@@ -320,9 +345,11 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
     if (cryptoIds.length === 0) return populateCryptoLogos(priceMap);
 
     // batch fetch prices for all crypto IDs (one API call)
+    const headers = COINGECKO_API_KEY ? { "x-cg-demo-api-key": COINGECKO_API_KEY } : {};
     logApiRequest('coinGecko', uncachedTickers);
     const response = await fetch(
-      `/api/coingecko/v3/simple/price?ids=${encodeURIComponent(cryptoIds.join(","))}&vs_currencies=usd&include_24hr_change=true`
+      `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoIds.join(",")}&vs_currencies=usd&include_24hr_change=true`,
+      { headers }
     );
 
     if (!response.ok) {
@@ -370,5 +397,247 @@ export const fetchCryptoPrices = async (cryptoTickers = []) => {
       if (cached) priceMap[ticker] = cached;
     });
     return populateCryptoLogos(priceMap);
+  }
+};
+
+// parse BullionStar API response into price map by ticker
+// adapt to actual response shape from https://www.bullionstar.com/developer/docs
+const parseBullionStarResponse = (data, tickers) => {
+  const result = {};
+  if (!data || typeof data !== 'object') return result;
+
+  // shape: { products: [ { symbol: "GOLD", buy_price_usd: 2650, ... } ] } or similar
+  const products = Array.isArray(data.products) ? data.products : (data.data && Array.isArray(data.data) ? data.data : []);
+  const bySymbol = {};
+  products.forEach((p) => {
+    const sym = (p.symbol || p.code || p.ticker || '').toUpperCase();
+    if (sym) bySymbol[sym] = p;
+  });
+
+  // shape: { GOLD: 2650, SILVER: 24 } flat prices
+  const flatPrices = data.GOLD != null || data.SILVER != null ? data : null;
+
+  tickers.forEach((ticker) => {
+    const upper = ticker.toUpperCase();
+    const product = bySymbol[upper];
+    const price = product?.buy_price_usd ?? product?.price_usd ?? product?.price ?? product?.buy_price
+      ?? (flatPrices && (flatPrices[upper] ?? flatPrices[ticker]));
+    const num = typeof price === 'number' ? price : parseFloat(price);
+    if (Number.isFinite(num)) {
+      result[ticker] = {
+        currentPrice: num,
+        priceChange24h: typeof product?.change_24h === 'number' ? product.change_24h : parseFloat(product?.change_24h || product?.percent_change || 0) || 0,
+        name: product?.name ?? COMMODITY_MAP[upper]?.name ?? upper,
+      };
+    }
+  });
+  return result;
+};
+
+// fetch prices for multiple commodities using BullionStar API
+export const fetchCommodityPrices = async (tickers = []) => {
+  if (!tickers?.length) return {};
+
+  const uniqueTickers = [...new Set(tickers)].filter((t) => t?.trim());
+  const { cachedMap, uncachedTickers } = getCachedBatch(CACHE_KEY_COMMODITIES, uniqueTickers);
+
+  const priceMap = {};
+  Object.keys(cachedMap).forEach((ticker) => {
+    priceMap[ticker] = { ...cachedMap[ticker], logo: getCommodityLogo(ticker) };
+  });
+
+  if (uncachedTickers.length === 0) {
+    if (Object.keys(cachedMap).length > 0) {
+      logApiRequest('bullionStar', Object.keys(cachedMap), true);
+    }
+    return priceMap;
+  }
+
+  if (!BULLIONSTAR_API_KEY) {
+    console.warn("BullionStar API key not found");
+    uncachedTickers.forEach((ticker) => {
+      const cached = getAnyCached(CACHE_KEY_COMMODITIES, ticker);
+      priceMap[ticker] = cached
+        ? { ...cached, logo: getCommodityLogo(ticker) }
+        : { currentPrice: 0, priceChange24h: 0, logo: getCommodityLogo(ticker), name: COMMODITY_MAP[ticker?.toUpperCase()]?.name ?? null };
+    });
+    return priceMap;
+  }
+
+  try {
+    logApiRequest('bullionStar', uncachedTickers);
+    const url = `${BULLIONSTAR_API_BASE.replace(/\/$/, '')}/v1/products`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${BULLIONSTAR_API_KEY}`,
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      if (isRateLimited(response)) {
+        console.warn("BullionStar rate limit or error, using cache");
+      }
+      uncachedTickers.forEach((ticker) => {
+        const cached = getAnyCached(CACHE_KEY_COMMODITIES, ticker);
+        priceMap[ticker] = cached
+          ? { ...cached, logo: getCommodityLogo(ticker) }
+          : { currentPrice: 0, priceChange24h: 0, logo: getCommodityLogo(ticker), name: COMMODITY_MAP[ticker?.toUpperCase()]?.name ?? null };
+      });
+      return priceMap;
+    }
+
+    const data = await response.json();
+    const parsed = parseBullionStarResponse(data, uncachedTickers);
+
+    uncachedTickers.forEach((ticker) => {
+      const p = parsed[ticker];
+      if (p) {
+        priceMap[ticker] = {
+          currentPrice: p.currentPrice,
+          priceChange24h: p.priceChange24h,
+          logo: getCommodityLogo(ticker),
+          name: p.name,
+        };
+        setToCache(CACHE_KEY_COMMODITIES, ticker, { currentPrice: p.currentPrice, priceChange24h: p.priceChange24h, name: p.name });
+      } else {
+        const cached = getAnyCached(CACHE_KEY_COMMODITIES, ticker);
+        priceMap[ticker] = cached
+          ? { ...cached, logo: getCommodityLogo(ticker) }
+          : { currentPrice: 0, priceChange24h: 0, logo: getCommodityLogo(ticker), name: COMMODITY_MAP[ticker?.toUpperCase()]?.name ?? null };
+      }
+    });
+
+    return priceMap;
+  } catch (error) {
+    console.error("Error fetching commodity prices:", error);
+    uncachedTickers.forEach((ticker) => {
+      const cached = getAnyCached(CACHE_KEY_COMMODITIES, ticker);
+      priceMap[ticker] = cached
+        ? { ...cached, logo: getCommodityLogo(ticker) }
+        : { currentPrice: 0, priceChange24h: 0, logo: getCommodityLogo(ticker), name: COMMODITY_MAP[ticker?.toUpperCase()]?.name ?? null };
+    });
+    return priceMap;
+  }
+};
+
+// fetch historical commodity price for a specific date (BullionStar may not support; return null for now)
+export const fetchHistoricalCommodityPrice = async (ticker, date) => {
+  if (!BULLIONSTAR_API_KEY) return null;
+  try {
+    const dateStr = formatDateToISO(date);
+    const url = `${BULLIONSTAR_API_BASE.replace(/\/$/, '')}/v1/products/${ticker.toUpperCase()}/history?date=${dateStr}`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${BULLIONSTAR_API_KEY}`, Accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const price = data?.price ?? data?.close ?? data?.price_usd;
+    const num = typeof price === 'number' ? price : parseFloat(price);
+    if (Number.isFinite(num)) {
+      return { price: num, date: dateStr };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
+// fetch historical stock price for a specific date using TwelveData
+export const fetchHistoricalStockPrice = async (ticker, date) => {
+  if (!TWELVE_DATA_API_KEY) {
+    console.warn("TwelveData API key not found");
+    return null;
+  }
+
+  try {
+    const dateStr = formatDateToISO(date);
+    logApiRequest('twelveData', [ticker]);
+    const response = await fetch(
+      `https://api.twelvedata.com/time_series?symbol=${ticker}&interval=1day&start_date=${dateStr}&end_date=${dateStr}&apikey=${TWELVE_DATA_API_KEY}&format=JSON`
+    );
+
+    if (!response.ok) {
+      if (isRateLimited(response)) {
+        console.warn(`TwelveData rate limit hit for ${ticker} on ${dateStr}`);
+      }
+      return null;
+    }
+
+    const data = await response.json();
+    
+    // TwelveData returns time_series array with close prices
+    if (data.values && data.values.length > 0) {
+      const priceData = data.values[0]; // first (and likely only) entry
+      return {
+        price: parseFloat(priceData.close || 0),
+        date: dateStr,
+      };
+    }
+
+    // Alternative format: direct close value
+    if (data.close) {
+      return {
+        price: parseFloat(data.close),
+        date: dateStr,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`Error fetching historical stock price for ${ticker} on ${date}:`, error);
+    return null;
+  }
+};
+
+// fetch historical crypto price for a specific date using CoinGecko
+export const fetchHistoricalCryptoPrice = async (ticker, date) => {
+  try {
+    // Get crypto ID
+    let coinGeckoId = CRYPTO_MAP[ticker]?.id;
+    if (!coinGeckoId) {
+      const info = await getCryptoInfo(ticker);
+      coinGeckoId = info?.id;
+    }
+
+    if (!coinGeckoId) {
+      console.warn(`No CoinGecko ID found for ${ticker}`);
+      return null;
+    }
+
+    // Format date as DD-MM-YYYY for CoinGecko
+    const d = new Date(date);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const dateStr = `${day}-${month}-${year}`;
+
+    const headers = COINGECKO_API_KEY ? { "x-cg-demo-api-key": COINGECKO_API_KEY } : {};
+    logApiRequest('coinGecko', [ticker]);
+    const response = await fetch(
+      `https://api.coingecko.com/api/v3/coins/${coinGeckoId}/history?date=${dateStr}`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      if (isRateLimited(response)) {
+        console.warn(`CoinGecko rate limit hit for ${ticker} on ${dateStr}`);
+      }
+      return null;
+    }
+
+    const data = await response.json();
+    
+    if (data.market_data?.current_price?.usd) {
+      return {
+        price: parseFloat(data.market_data.current_price.usd),
+        date: formatDateToISO(date),
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`Error fetching historical crypto price for ${ticker} on ${date}:`, error);
+    return null;
   }
 };

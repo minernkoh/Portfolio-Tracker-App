@@ -1,0 +1,21 @@
+{
+  "name": "portfolio-tracker-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "init-db": "node src/initDb.js",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "prepare-env": "node scripts/prepare-env.js",
+    "test-connection": "node scripts/test-connection.js",
+    "setup": "npm run prepare-env && npm run init-db"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "pg": "^8.13.0"
+  }
+}

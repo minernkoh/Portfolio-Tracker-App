@@ -6,10 +6,11 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
-} from "../services/supabaseDb";
-import { fetchStockPrices, fetchCryptoPrices } from "../services/api";
+} from "../services/api-client";
+import { fetchStockPrices, fetchCryptoPrices, fetchCommodityPrices } from "../services/api";
 import { normalizeAssetType } from "../services/utils";
-import { useAuth } from "../context/AuthContext";
+import { CACHE_DURATION_MS, REFETCH_INTERVAL_MS } from "../constants/config";
+import { fetchHistoricalPricesForTransactions } from "../services/historicalPrices";
 
 // query keys - centralized for consistency
 // use sorted joined strings for stable keys with arrays
@@ -17,16 +18,19 @@ export const queryKeys = {
   transactions: ["transactions"],
   stockPrices: (tickers) => ["stockPrices", [...tickers].sort().join(",")],
   cryptoPrices: (tickers) => ["cryptoPrices", [...tickers].sort().join(",")],
+  commodityPrices: (tickers) => ["commodityPrices", [...tickers].sort().join(",")],
+  historicalPrices: (txIds) => ["historicalPrices", [...txIds].sort().join(",")],
 };
 
-/** Supabase URL + anon key present and user signed in (JWT in localStorage). */
-export function useSupabaseReady() {
-  const { session, isConfigured } = useAuth();
-  return { isReady: Boolean(isConfigured && session) };
+// hook to check if backend API is configured (PostgreSQL backend)
+export function useAirtableStatus() {
+  const hasApi = !!import.meta.env.VITE_API_URL;
+  return { isEnabled: hasApi };
 }
 
+// hook to fetch all transactions from airtable
 export function useTransactions() {
-  const { isReady } = useSupabaseReady();
+  const { isEnabled } = useAirtableStatus();
 
   return useQuery({
     queryKey: queryKeys.transactions,
@@ -34,8 +38,8 @@ export function useTransactions() {
       const data = await fetchTransactions();
       return data;
     },
-    enabled: isReady,
-    staleTime: 5 * 60 * 1000,
+    enabled: isEnabled,
+    staleTime: CACHE_DURATION_MS.TRANSACTIONS,
   });
 }
 
@@ -43,12 +47,15 @@ export function useTransactions() {
 // separates stocks from crypto and fetches from appropriate APIs (TwelveData vs CoinGecko)
 export function usePrices(transactions = []) {
   // extract unique stock tickers - memoized to prevent unnecessary re-renders
-  // filters out crypto, maps to tickers, removes duplicates with Set
+  // filters out crypto and commodity, maps to tickers, removes duplicates with Set
   const stockTickers = useMemo(() => {
     return [
       ...new Set(
         transactions
-          .filter((tx) => normalizeAssetType(tx.assetType) !== "Crypto")
+          .filter((tx) => {
+            const type = normalizeAssetType(tx.assetType);
+            return type !== "Crypto" && type !== "Commodity";
+          })
           .map((tx) => tx.ticker)
           .filter(Boolean) // remove empty/null tickers
       ),
@@ -67,6 +74,18 @@ export function usePrices(transactions = []) {
     ];
   }, [transactions]);
 
+  // extract unique commodity tickers
+  const commodityTickers = useMemo(() => {
+    return [
+      ...new Set(
+        transactions
+          .filter((tx) => normalizeAssetType(tx.assetType) === "Commodity")
+          .map((tx) => tx.ticker)
+          .filter(Boolean)
+      ),
+    ];
+  }, [transactions]);
+
   // create stable query keys - memoized to prevent unnecessary query refetches
   // query keys must be stable (same reference) for TanStack Query to cache properly
   const stockQueryKey = useMemo(
@@ -77,47 +96,87 @@ export function usePrices(transactions = []) {
     () => queryKeys.cryptoPrices(cryptoTickers),
     [cryptoTickers]
   );
+  const commodityQueryKey = useMemo(
+    () => queryKeys.commodityPrices(commodityTickers),
+    [commodityTickers]
+  );
 
   // fetch stock prices from TwelveData API
   const stocksQuery = useQuery({
     queryKey: stockQueryKey,
     queryFn: () => fetchStockPrices(stockTickers),
-    enabled: stockTickers.length > 0, // only fetch if stock tickers exist
-    staleTime: 2 * 60 * 1000, // 2 minutes - prices change frequently
-    refetchInterval: 5 * 60 * 1000, // auto-refresh every 5 minutes
+    enabled: stockTickers.length > 0,
+    staleTime: CACHE_DURATION_MS.PRICES,
+    refetchInterval: REFETCH_INTERVAL_MS.PRICES,
   });
 
   // fetch crypto prices from CoinGecko API
   const cryptoQuery = useQuery({
     queryKey: cryptoQueryKey,
     queryFn: () => fetchCryptoPrices(cryptoTickers),
-    enabled: cryptoTickers.length > 0, // only fetch if crypto tickers exist
-    staleTime: 2 * 60 * 1000, // 2 minutes
-    refetchInterval: 5 * 60 * 1000, // auto-refresh every 5 minutes
+    enabled: cryptoTickers.length > 0,
+    staleTime: CACHE_DURATION_MS.PRICES,
+    refetchInterval: REFETCH_INTERVAL_MS.PRICES,
   });
 
-  // combine prices from both queries into a single object
-  // spread operator merges stock and crypto prices (tickers won't overlap)
+  // fetch commodity prices from BullionStar API
+  const commodityQuery = useQuery({
+    queryKey: commodityQueryKey,
+    queryFn: () => fetchCommodityPrices(commodityTickers),
+    enabled: commodityTickers.length > 0,
+    staleTime: CACHE_DURATION_MS.PRICES,
+    refetchInterval: REFETCH_INTERVAL_MS.PRICES,
+  });
+
+  // combine prices from all three queries into a single object
+  // spread operator merges stock, crypto, and commodity prices (tickers won't overlap)
   const prices = useMemo(
     () => ({
       ...(stocksQuery.data || {}),
       ...(cryptoQuery.data || {}),
+      ...(commodityQuery.data || {}),
     }),
-    [stocksQuery.data, cryptoQuery.data]
+    [stocksQuery.data, cryptoQuery.data, commodityQuery.data]
   );
 
   // determine loading state - only loading if tickers exist to fetch
   // if no tickers, queries are disabled and won't show loading
   const isLoading =
     (stockTickers.length > 0 && stocksQuery.isLoading) ||
-    (cryptoTickers.length > 0 && cryptoQuery.isLoading);
+    (cryptoTickers.length > 0 && cryptoQuery.isLoading) ||
+    (commodityTickers.length > 0 && commodityQuery.isLoading);
 
   return {
     prices,
     isLoading,
-    isFetching: stocksQuery.isFetching || cryptoQuery.isFetching,
-    error: stocksQuery.error || cryptoQuery.error,
+    isFetching: stocksQuery.isFetching || cryptoQuery.isFetching || commodityQuery.isFetching,
+    error: stocksQuery.error || cryptoQuery.error || commodityQuery.error,
   };
+}
+
+// hook to fetch historical prices for all transaction dates
+export function useHistoricalPrices(transactions = []) {
+  const { isEnabled } = useAirtableStatus();
+
+  // Create stable query key based on transaction IDs and dates
+  const queryKey = useMemo(() => {
+    const txKey = transactions
+      .map((tx) => `${tx.id}-${tx.date}`)
+      .sort()
+      .join(",");
+    return queryKeys.historicalPrices([txKey]);
+  }, [transactions]);
+
+  return useQuery({
+    queryKey,
+    queryFn: async () => {
+      const prices = await fetchHistoricalPricesForTransactions(transactions);
+      return prices;
+    },
+    enabled: isEnabled && transactions.length > 0,
+    staleTime: CACHE_DURATION_MS.HISTORICAL_PRICES,
+    refetchOnWindowFocus: false, // Don't refetch historical prices on window focus
+  });
 }
 
 // hook to add a new transaction

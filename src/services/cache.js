@@ -1,7 +1,7 @@
 // centralized caching utilities for localStorage
-// reduces duplication in api.js
+import { CACHE_DURATION_MS } from "../constants/config";
 
-const DEFAULT_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_CACHE_DURATION = CACHE_DURATION_MS.TRANSACTIONS;
 
 // generic cache getter with expiration check
 // returns cached data only if it's still fresh (within duration)

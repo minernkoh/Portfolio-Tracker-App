@@ -41,8 +41,23 @@ export const POPULAR_CRYPTO = Object.entries(CRYPTO_MAP)
     logo: data.logo,
   }));
 
-// combines both into a single array
-export const SEARCH_ASSETS = [...POPULAR_STOCKS, ...POPULAR_CRYPTO];
+// commodity ticker to display name (used by api.js for BullionStar price fetching)
+export const COMMODITY_MAP = {
+  GOLD: { name: "Gold" },
+  SILVER: { name: "Silver" },
+  PLATINUM: { name: "Platinum" },
+  PALLADIUM: { name: "Palladium" },
+};
+
+// popular commodities for autocomplete dropdown
+export const POPULAR_COMMODITIES = Object.entries(COMMODITY_MAP).map(([ticker, data]) => ({
+  ticker,
+  name: data.name,
+  type: "Commodity",
+}));
+
+// combines stocks, crypto, and commodities into a single array
+export const SEARCH_ASSETS = [...POPULAR_STOCKS, ...POPULAR_CRYPTO, ...POPULAR_COMMODITIES];
 
 // helper to get assets by type
 export const getAssetsByType = (type, limit = 6) => {
