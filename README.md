@@ -2,6 +2,8 @@
 
 A modern investment portfolio tracker built with React. Track stocks and cryptocurrencies in one place with real-time price updates, visual analytics, and comprehensive transaction management. The app calculates profit/loss using industry-standard FIFO (First In, First Out) cost basis methodology.
 
+**Live:** [https://mk-portfolio-tracker.vercel.app](https://mk-portfolio-tracker.vercel.app)
+
 ![image of portfolio tracker](images/portfolio-tracker_image.png)
 
 ## ✨ Features
@@ -104,6 +106,8 @@ See `.env.example`. Important:
 Prefer `TWELVE_DATA_API_KEY` and `COINGECKO_API_KEY` (no `VITE_` prefix) so market keys stay server-side in dev/preview via the Vite proxy. See **Market data keys** below.
 
 ## ▲ Deploying to Vercel
+
+Production is at [https://mk-portfolio-tracker.vercel.app](https://mk-portfolio-tracker.vercel.app).
 
 1. Connect the Git repository and set **Framework Preset** to Vite (or let Vercel auto-detect).
 2. Add environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and optionally `TWELVE_DATA_API_KEY` / `COINGECKO_API_KEY` for live prices.

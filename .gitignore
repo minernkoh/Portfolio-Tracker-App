@@ -127,3 +127,4 @@ dist/
 
 # Ignore python cache
 **/__pycache__/
+.vercel
