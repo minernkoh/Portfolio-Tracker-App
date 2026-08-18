@@ -14,6 +14,7 @@ A modern investment portfolio tracker built with React. Track stocks and cryptoc
 - **Portfolio Analytics** - Performance charts and allocation pie charts with time filters
 - **Privacy Mode** - One-click toggle to hide sensitive portfolio values
 - **Auth** - Email/password via Supabase Auth (JWT). Profiles support `user` and `admin` roles; Row Level Security enforces data access on the server
+- **Preview mode** - Try the full app without an account. Sample transactions and snapshot prices stay in this browser (localStorage); live market APIs and Supabase are not called
 
 ## 🛠️ Tech Stack
 
@@ -34,19 +35,23 @@ A modern investment portfolio tracker built with React. Track stocks and cryptoc
 ```
 src/
 ├── context/
-│   └── AuthContext.jsx         # Session, profile role, sign in/out
+│   └── AuthContext.jsx         # Session, profile role, sign in/out, preview
 ├── lib/
 │   └── supabaseClient.js       # Singleton browser client (anon key only)
+├── data/
+│   └── previewSeed.js          # Sample transactions + snapshot prices
 ├── components/
-│   ├── Login.jsx               # Email auth; warns if env missing
-│   ├── ProtectedRoute.jsx      # Requires Supabase config + session
+│   ├── Login.jsx               # Email auth + Try preview
+│   ├── ProtectedRoute.jsx      # Session or preview
+│   ├── PreviewBanner.jsx       # Preview notice, reset, create account
 │   └── ...
 ├── hooks/
-│   └── usePortfolio.js         # Queries/mutations → supabaseDb
+│   └── usePortfolio.js         # Queries/mutations → supabaseDb or previewStore
 ├── services/
 │   ├── supabaseDb.js           # Transaction CRUD
+│   ├── previewStore.js         # localStorage sandbox for preview
 │   ├── api.js                  # Market data (optional API keys)
-│   └── *.test.js               # Vitest unit tests (FIFO, validation, dates)
+│   └── *.test.js               # Vitest unit tests (FIFO, validation, dates, preview)
 api/                            # Vercel serverless price proxies (production)
 supabase/migrations/
 ├── 001_initial_schema.sql      # Tables, RLS, new-user trigger
@@ -74,7 +79,16 @@ cp .env.example .env
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173). You will be redirected to `/login` until you sign in.
+If this project is already linked on Vercel with the Supabase integration, pull the keys instead of copying them by hand:
+
+```bash
+vercel env pull .env
+npm run dev
+```
+
+Restart the dev server after changing `.env`. Sign up and sign in stay disabled until `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set.
+
+Open [http://localhost:5173](http://localhost:5173). The app opens in **preview mode** with sample data and snapshot prices (not live market APIs). Data stays in this browser until you create an account. Use `/login` (or **Create account** / **Sign in** in the preview banner) to sign in or create an account.
 
 Run the unit tests with `npm test` and the linter with `npm run lint` (both also run in CI on every pull request).
 
@@ -82,7 +96,7 @@ Run the unit tests with `npm test` and the linter with `npm run lint` (both also
 
 1. Create a project and run the files in `supabase/migrations/` (in order) in the **SQL Editor** — `001` creates `profiles`, `transactions`, RLS, and the new-user trigger; `002` adds data-integrity constraints; `003` replaces the admin-check subqueries in the RLS policies with a `security definer` `is_admin()` function (the inline subqueries trigger Postgres's "infinite recursion detected in policy" error).
 2. In **Authentication → Providers**, enable Email.
-3. Copy **Project URL** and **anon public** key into `.env` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+3. Copy **Project URL** and **anon public** key into `.env` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. If the app is already connected to Supabase on Vercel, `vercel env pull .env` writes those values for local use.
 4. **Admin users**: new signups get `role = user`. Promote an account in SQL:
 
    ```sql
