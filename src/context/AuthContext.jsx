@@ -8,8 +8,16 @@ import {
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getSupabase, isSupabaseConfigured } from "../lib/supabaseClient";
+import { PREVIEW_USER_ID } from "../data/previewSeed";
+import {
+  isPreviewEnabled,
+  setPreviewEnabled,
+  resetTransactions as resetPreviewTransactions,
+} from "../services/previewStore";
 
 const AuthContext = createContext(null);
+
+const PREVIEW_USER = { id: PREVIEW_USER_ID };
 
 async function fetchProfile(supabase, userId) {
   const { data, error } = await supabase
@@ -30,9 +38,18 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isPreview, setIsPreview] = useState(() => isPreviewEnabled());
 
   const supabase = useMemo(() => getSupabase(), []);
   const queryClient = useQueryClient();
+
+  // a real session always wins over preview
+  useEffect(() => {
+    if (session && isPreview) {
+      setPreviewEnabled(false);
+      setIsPreview(false);
+    }
+  }, [session, isPreview]);
 
   useEffect(() => {
     if (!supabase) {
@@ -85,6 +102,10 @@ export function AuthProvider({ children }) {
         email,
         password,
       });
+      if (!error) {
+        setPreviewEnabled(false);
+        setIsPreview(false);
+      }
       return { error };
     },
     [supabase]
@@ -106,20 +127,57 @@ export function AuthProvider({ children }) {
     queryClient.clear();
   }, [supabase, queryClient]);
 
+  const enterPreview = useCallback(() => {
+    setPreviewEnabled(true);
+    setIsPreview(true);
+    queryClient.clear();
+  }, [queryClient]);
+
+  const exitPreview = useCallback(() => {
+    setPreviewEnabled(false);
+    setIsPreview(false);
+    queryClient.clear();
+  }, [queryClient]);
+
+  const resetPreviewData = useCallback(() => {
+    resetPreviewTransactions();
+    queryClient.invalidateQueries({
+      queryKey: ["transactions", PREVIEW_USER_ID],
+    });
+  }, [queryClient]);
+
+  const previewActive = isPreview && !session;
+
   const value = useMemo(
     () => ({
       session,
-      user: session?.user ?? null,
+      user: session?.user ?? (previewActive ? PREVIEW_USER : null),
       profile,
-      isAdmin: profile?.role === "admin",
+      isAdmin: !previewActive && profile?.role === "admin",
+      isPreview: previewActive,
       loading,
       signIn,
       signUp,
       signOut,
+      enterPreview,
+      exitPreview,
+      resetPreviewData,
       supabase,
       isConfigured: isSupabaseConfigured(),
     }),
-    [session, profile, loading, signIn, signUp, signOut, supabase]
+    [
+      session,
+      previewActive,
+      profile,
+      loading,
+      signIn,
+      signUp,
+      signOut,
+      enterPreview,
+      exitPreview,
+      resetPreviewData,
+      supabase,
+    ]
   );
 
   return (

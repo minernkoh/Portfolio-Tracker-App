@@ -11,6 +11,14 @@ import {
 import { fetchStockPrices, fetchCryptoPrices } from "../services/api";
 import { normalizeAssetType } from "../services/utils";
 import { useAuth } from "../context/AuthContext";
+import {
+  loadTransactions as loadPreviewTransactions,
+  createPreviewTransaction,
+  updatePreviewTransaction,
+  deletePreviewTransaction,
+  deletePreviewTransactions,
+  getPreviewPrices,
+} from "../services/previewStore";
 
 // query keys - centralized for consistency
 // use sorted joined strings for stable keys with arrays
@@ -28,21 +36,22 @@ export function useTransactionsKey() {
   return useMemo(() => queryKeys.transactions(user?.id), [user?.id]);
 }
 
-/** Supabase URL + anon key present and user signed in (JWT in localStorage). */
+/** Data layer is ready: signed in to Supabase, or running in preview. */
 export function useSupabaseReady() {
-  const { session, isConfigured } = useAuth();
-  return { isReady: Boolean(isConfigured && session) };
+  const { session, isConfigured, isPreview } = useAuth();
+  return { isReady: Boolean(isPreview || (isConfigured && session)) };
 }
 
 export function useTransactions() {
   const { isReady } = useSupabaseReady();
+  const { isPreview } = useAuth();
   const transactionsKey = useTransactionsKey();
 
   return useQuery({
     queryKey: transactionsKey,
     queryFn: async () => {
-      const data = await fetchTransactions();
-      return data;
+      if (isPreview) return loadPreviewTransactions();
+      return fetchTransactions();
     },
     enabled: isReady,
     staleTime: 5 * 60 * 1000,
@@ -52,6 +61,8 @@ export function useTransactions() {
 // hook to fetch prices for all assets
 // separates stocks from crypto and fetches from appropriate APIs (TwelveData vs CoinGecko)
 export function usePrices(transactions = []) {
+  const { isPreview } = useAuth();
+
   // extract unique stock tickers - memoized to prevent unnecessary re-renders
   // filters out crypto, maps to tickers, removes duplicates with Set
   const stockTickers = useMemo(() => {
@@ -92,41 +103,50 @@ export function usePrices(transactions = []) {
   const stocksQuery = useQuery({
     queryKey: stockQueryKey,
     queryFn: () => fetchStockPrices(stockTickers),
-    enabled: stockTickers.length > 0, // only fetch if stock tickers exist
+    enabled: !isPreview && stockTickers.length > 0,
     staleTime: 2 * 60 * 1000, // 2 minutes - prices change frequently
-    refetchInterval: 5 * 60 * 1000, // auto-refresh every 5 minutes
+    refetchInterval: isPreview ? false : 5 * 60 * 1000,
   });
 
   // fetch crypto prices from CoinGecko API
   const cryptoQuery = useQuery({
     queryKey: cryptoQueryKey,
     queryFn: () => fetchCryptoPrices(cryptoTickers),
-    enabled: cryptoTickers.length > 0, // only fetch if crypto tickers exist
+    enabled: !isPreview && cryptoTickers.length > 0,
     staleTime: 2 * 60 * 1000, // 2 minutes
-    refetchInterval: 5 * 60 * 1000, // auto-refresh every 5 minutes
+    refetchInterval: isPreview ? false : 5 * 60 * 1000,
   });
+
+  const snapshotPrices = useMemo(
+    () => (isPreview ? getPreviewPrices(transactions) : null),
+    [isPreview, transactions]
+  );
 
   // combine prices from both queries into a single object
   // spread operator merges stock and crypto prices (tickers won't overlap)
   const prices = useMemo(
-    () => ({
-      ...(stocksQuery.data || {}),
-      ...(cryptoQuery.data || {}),
-    }),
-    [stocksQuery.data, cryptoQuery.data]
+    () =>
+      snapshotPrices ?? {
+        ...(stocksQuery.data || {}),
+        ...(cryptoQuery.data || {}),
+      },
+    [snapshotPrices, stocksQuery.data, cryptoQuery.data]
   );
 
   // determine loading state - only loading if tickers exist to fetch
   // if no tickers, queries are disabled and won't show loading
   const isLoading =
-    (stockTickers.length > 0 && stocksQuery.isLoading) ||
-    (cryptoTickers.length > 0 && cryptoQuery.isLoading);
+    !isPreview &&
+    ((stockTickers.length > 0 && stocksQuery.isLoading) ||
+      (cryptoTickers.length > 0 && cryptoQuery.isLoading));
 
   return {
     prices,
     isLoading,
-    isFetching: stocksQuery.isFetching || cryptoQuery.isFetching,
-    error: stocksQuery.error || cryptoQuery.error,
+    isFetching: isPreview
+      ? false
+      : stocksQuery.isFetching || cryptoQuery.isFetching,
+    error: isPreview ? null : stocksQuery.error || cryptoQuery.error,
   };
 }
 
@@ -134,9 +154,10 @@ export function usePrices(transactions = []) {
 export function useAddTransaction() {
   const queryClient = useQueryClient();
   const transactionsKey = useTransactionsKey();
+  const { isPreview } = useAuth();
 
   return useMutation({
-    mutationFn: createTransaction,
+    mutationFn: isPreview ? createPreviewTransaction : createTransaction,
     onMutate: async (newTx) => {
       // cancel any outgoing refetches to prevent race conditions
       // race conditions = when multiple operations compete and interfere with each other
@@ -174,9 +195,13 @@ export function useAddTransaction() {
 export function useUpdateTransaction() {
   const queryClient = useQueryClient();
   const transactionsKey = useTransactionsKey();
+  const { isPreview } = useAuth();
 
   return useMutation({
-    mutationFn: ({ id, data }) => updateTransaction(id, data),
+    mutationFn: ({ id, data }) =>
+      isPreview
+        ? updatePreviewTransaction(id, data)
+        : updateTransaction(id, data),
     onMutate: async ({ id, data }) => {
       await queryClient.cancelQueries({ queryKey: transactionsKey });
 
@@ -208,9 +233,10 @@ export function useUpdateTransaction() {
 export function useDeleteTransaction() {
   const queryClient = useQueryClient();
   const transactionsKey = useTransactionsKey();
+  const { isPreview } = useAuth();
 
   return useMutation({
-    mutationFn: deleteTransaction,
+    mutationFn: isPreview ? deletePreviewTransaction : deleteTransaction,
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: transactionsKey });
 
@@ -242,12 +268,15 @@ export function useDeleteTransaction() {
 export function useDeleteAsset() {
   const queryClient = useQueryClient();
   const transactionsKey = useTransactionsKey();
+  const { isPreview } = useAuth();
 
   return useMutation({
     mutationFn: async ({ ticker, transactionIds }) => {
       // single batched delete; throws on failure so it surfaces in onError
       // (refetch in onSettled restores truth)
-      const count = await deleteTransactions(transactionIds);
+      const count = isPreview
+        ? deletePreviewTransactions(transactionIds)
+        : await deleteTransactions(transactionIds);
       return { ticker, count };
     },
     onMutate: async ({ ticker }) => {

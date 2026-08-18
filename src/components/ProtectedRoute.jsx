@@ -1,22 +1,23 @@
-import { Navigate, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import LoadingState from "./ui/LoadingState";
 
 export default function ProtectedRoute({ children }) {
-  const { session, loading, isConfigured } = useAuth();
-  const location = useLocation();
+  const { session, loading, isPreview, enterPreview } = useAuth();
 
-  if (!isConfigured) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
+  useEffect(() => {
+    if (!loading && !session && !isPreview) {
+      enterPreview();
+    }
+  }, [loading, session, isPreview, enterPreview]);
 
   if (loading) {
     return <LoadingState fullScreen />;
   }
 
-  if (!session) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  if (session || isPreview) {
+    return children;
   }
 
-  return children;
+  return <LoadingState fullScreen />;
 }
