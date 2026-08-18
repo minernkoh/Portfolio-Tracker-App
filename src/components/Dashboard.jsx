@@ -40,12 +40,18 @@ export default function Dashboard() {
   const { theme, toggleTheme } = useTheme();
   
   const navigate = useNavigate();
-  const { signOut, isAdmin, user, loading: authLoading } = useAuth();
+  const { signOut, isAdmin, user, loading: authLoading, isPreview, exitPreview } =
+    useAuth();
 
   const handleSignOut = useCallback(async () => {
+    if (isPreview) {
+      exitPreview();
+      navigate("/login", { replace: true });
+      return;
+    }
     await signOut();
     navigate("/login", { replace: true });
-  }, [signOut, navigate]);
+  }, [isPreview, exitPreview, signOut, navigate]);
 
   const { data: transactions = [], isLoading, error: loadError, refetch } = useTransactions();
   const { prices, isFetching: pricesFetching } = usePrices(transactions);
@@ -219,6 +225,11 @@ export default function Dashboard() {
             <div>
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <h1 className="text-xl font-bold text-[var(--text-primary)]">My Portfolio</h1>
+                {isPreview && (
+                  <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-[var(--accent-blue)]/20 text-[var(--accent-blue)] border border-[var(--accent-blue)]/40">
+                    Preview
+                  </span>
+                )}
                 {isAdmin && (
                   <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40">
                     Admin
@@ -270,6 +281,20 @@ export default function Dashboard() {
             />
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            {isPreview && (
+              <>
+                <span className="text-xs text-[var(--text-secondary)] hidden sm:inline">
+                  Preview
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigate("/login", { state: { mode: "signin" } })}
+                  className="text-xs font-semibold text-[var(--accent-blue)] hover:underline"
+                >
+                  Sign in
+                </button>
+              </>
+            )}
             {user?.email && (
               <span className="text-xs text-[var(--text-secondary)] max-w-[140px] truncate hidden sm:inline" title={user.email}>
                 {user.email}
@@ -279,7 +304,7 @@ export default function Dashboard() {
               type="button"
               onClick={() => handleSignOut()}
               className="p-2 rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors"
-              title="Sign out"
+              title={isPreview ? "Exit preview" : "Sign out"}
             >
               <SignOut size={18} weight="bold" />
             </button>

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import Layout from "./Layout";
@@ -7,18 +7,36 @@ import Button from "./ui/Button";
 import FormInput from "./ui/FormInput";
 
 export default function Login() {
-  const { session, loading, signIn, signUp, isConfigured } = useAuth();
+  const {
+    session,
+    loading,
+    signIn,
+    signUp,
+    isConfigured,
+    isPreview,
+    exitPreview,
+  } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   // restore the full location (path + query + hash) the user was redirected from
   const fromLocation = location.state?.from;
   const from = fromLocation
     ? `${fromLocation.pathname || "/"}${fromLocation.search || ""}${fromLocation.hash || ""}`
     : "/";
 
-  const [mode, setMode] = useState("signin");
+  const [mode, setMode] = useState(
+    location.state?.mode === "signup" ? "signup" : "signin"
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
+
+  // visiting /login means the user wants to sign in or sign up — leave preview
+  useEffect(() => {
+    if (isPreview) {
+      exitPreview();
+    }
+  }, [isPreview, exitPreview]);
 
   if (loading) {
     return (
@@ -31,7 +49,7 @@ export default function Login() {
   }
 
   if (session) {
-    return <Navigate to={from} replace />;
+    return <Navigate to={from === "/login" ? "/" : from} replace />;
   }
 
   const handleSubmit = async (e) => {
@@ -70,8 +88,7 @@ export default function Login() {
             Portfolio Tracker
           </h1>
           <p className="text-sm text-[var(--text-secondary)] mb-6">
-            Sign in with your account. Admins use the same login; access is
-            determined by your profile in Supabase.
+            Sign in with your account, or try a preview without creating one.
           </p>
 
           {!isConfigured && (
@@ -141,9 +158,26 @@ export default function Login() {
             </Button>
           </form>
 
+          <div className="flex items-center gap-3 my-5">
+            <div className="h-px flex-1 bg-[var(--border-subtle)]" />
+            <span className="text-xs text-[var(--text-secondary)]">or</span>
+            <div className="h-px flex-1 bg-[var(--border-subtle)]" />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              const target = from && from !== "/login" ? from : "/";
+              navigate(target, { replace: true });
+            }}
+            className="w-full py-2 text-sm font-semibold rounded-lg border border-[var(--border-subtle)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors"
+          >
+            Try preview
+          </button>
+
           <p className="mt-6 text-xs text-[var(--text-secondary)] text-center">
-            Session is stored in your browser (localStorage). Use the public anon
-            key only — never expose the service role key in the frontend.
+            Preview data stays in this browser and never hits your account.
+            Signed-in sessions are stored in localStorage.
           </p>
         </div>
         <Link
